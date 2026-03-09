@@ -3,7 +3,6 @@ package mccct
 import java.util.concurrent.CyclicBarrier
 import gears.async.Cancellable
 import java.util.concurrent.atomic.AtomicInteger
-import scala.annotation.switch
 
 enum ControllerType:
   case Async, Finish, Base, Actor
@@ -22,6 +21,10 @@ class Controller(
   val id: Id        = Id(parent, isEnd)
   var globalId: Int = -1
 
+  var scheduleIndex: Int = -1
+  var possibleFailuresEncountered: Int = 0
+  var failureSchedule: Vector[Boolean] = Vector()
+
   val totalChildren = new AtomicInteger(0)
 
   var ready: Boolean = false
@@ -36,7 +39,12 @@ class Controller(
 
   private val schedulerBarrier = new CyclicBarrier(2)
 
-  def await() = schedulerBarrier.await()
+  def await(index: Int = -1) =
+    // The scheduler will supply an index when the task is ready to run,
+    // this index is used to append information about failure injection
+    // when the controller finishes.
+    if index >= 0 then scheduleIndex = index
+    schedulerBarrier.await()
 
   def reset() = schedulerBarrier.reset()
 

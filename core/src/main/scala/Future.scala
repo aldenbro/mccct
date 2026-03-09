@@ -17,6 +17,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.CyclicBarrier
+import scala.collection.mutable.TreeMap
 
 object Future {
 
@@ -145,6 +146,10 @@ object Scheduler {
 
   val runningActors = AtomicInteger(0)
 
+  var recordFailureInjections                     = true
+  var failureMapping: TreeMap[Int, Vector[Boolean]] = TreeMap[Int, Vector[Boolean]]()
+  var failureAlgorithm: FailureExplorationAlgorithm = NeverInject
+
   private var readyTasks: List[Controller] =
     List() // The list of readyTasks in which the exploration algorithm can choose one to execute
 
@@ -157,12 +162,20 @@ object Scheduler {
 
   private var startedThreads = List[(Thread, Controller)]()
 
-  def start(alg: ExplorationAlgorithm = RandomWalk, shouldPrint: Boolean = false, sequential: Boolean = false): Unit =
+  def start(
+      alg: ExplorationAlgorithm = RandomWalk,
+      shouldPrint: Boolean = false,
+      sequential: Boolean = false,
+      failureAlg: FailureExplorationAlgorithm = NeverInject,
+      recordFailures: Boolean = true
+  ): Unit =
     Scheduler.reset() // In case the scheduler has been used before, reset it so no information is carried over
     lock.lock()
     try
       debug = shouldPrint
       isSequential = sequential
+      failureAlgorithm = failureAlg
+      recordFailureInjections = recordFailures
     finally lock.unlock()
     val schedulerTask = new Runnable {
       def run() =
@@ -345,12 +358,15 @@ object Scheduler {
         queueChange.signal()
     finally lock.unlock()
 
-  private[mccct] def getSchedule(): List[String] = schedule
+  def getSchedule(): List[String] = schedule
 
   private[mccct] def finish(ctrl: Controller, shouldDecrement: Boolean = true): Unit =
     lock.lock()
     try
       if shouldDecrement then cnt -= 1
+      // If possible failures were encountered during execution, we keep track of that in the scheduler
+      if ctrl.failureSchedule.nonEmpty then
+        failureMapping += (ctrl.scheduleIndex, ctrl.failureSchedule)
       activeTasks.getAndDecrement()
       if hasFinished then    // If this was the last task to complete and all tasks have been loaded then
         queueChange.signal() // If the Scheduler is in a state which should terminate, signal the queueChange
@@ -365,8 +381,8 @@ object Scheduler {
         println(s"scheduler signalled (cnt=$cnt) with task: ${ctrl.toString()}")
         println(s"scheduler signalling task $ctrl to continue")
       if !ctrl.isRoot then activeTasks.getAndIncrement()
-      // let task start
-      ctrl.await()
+      // We let the controller start, and give it an index based on the current schedule
+      ctrl.await(schedule.length)
       ctrl.reset()
       schedule = ctrl.id
         .getId() :: schedule // Add the id of the task to the history/schedule of executed tasks (this run of the schedule)
@@ -476,6 +492,27 @@ object Scheduler {
     )
     controller.await() // Wait until the task can resume
 
+  /**
+    * A method that can be instrumented in the code to inject failures based  
+    * on the scheduler's failure algorithm, or based on a recorded schedule.
+    *
+    * @param failure,
+    *   the failure to inject
+    * @param controller,
+    *   the controller in which `possibleFailure` was called
+    */
+  def possibleFailure(failure: Throwable)(using controller: Controller): Unit =
+    // Check if the controller has predetermined the result, otherwise generate result using failure algorithm
+    val shouldThrow =
+      if controller.failureSchedule.length > controller.possibleFailuresEncountered then
+        controller.failureSchedule(controller.possibleFailuresEncountered)
+      else
+        val choice = failureAlgorithm.shouldInject()
+        controller.failureSchedule = controller.failureSchedule :+ choice
+        choice
+    controller.possibleFailuresEncountered += 1
+    if shouldThrow then throw failure
+
   def reset(): Unit =
     lock.lock()
     try
@@ -491,6 +528,9 @@ object Scheduler {
       activeTasks.set(0)
       startedThreads = List()
       hasTimedOut = false
+      recordFailureInjections = true
+      failureMapping = TreeMap[Int, Vector[Boolean]]()
+      failureAlgorithm = NeverInject
     finally lock.unlock()
 
   def getDone(): Boolean = done
@@ -616,7 +656,26 @@ object Scheduler {
     fileData.split(", ").toList // Split the data into the correct strings
   }
 
-  def scheduleToString(): String = schedule.mkString(", ")
+  def scheduleToString(includeFailures: Boolean): String =
+    if !includeFailures then schedule.mkString(", ")
+    else
+      val sb   = new StringBuilder(schedule.size * 10) // Set capacity for less resizing
+      var i    = 0
+      val iter = schedule.iterator
+      while (iter.hasNext) {
+        val id = iter.next()
+        val value =
+          // We append failure information if it exists, otherwise we keep the schedule as is
+          failureMapping.get(i) match {
+            case Some(failureSchedule) =>
+              id + "|" + failureSchedule.iterator.map(b => if b then '1' else '0').mkString(".")
+            case None => id
+          }
+        sb.append(value)
+        if iter.hasNext then sb.append(", ")
+        i += 1
+      }
+      sb.toString()
 
   def writeSchedule(fileName: String = "", id: String = ""): Unit = {
     if debug then println("Writing schedule to file")
@@ -635,8 +694,8 @@ object Scheduler {
 
     val fileWriter = new FileWriter(new File(file)) // Open and create a new file with the given name
     // An option to this is to write each task on a new line, this would make parsing the file into a oneliner, however long files can be a bit hard to work with.
-    fileWriter.write(schedule.mkString(", ")) // Write the task ids seperated by ", "
-    fileWriter.close()                        // Close the file writer
+    fileWriter.write(scheduleToString(recordFailureInjections)) // Write the task ids seperated by ", "
+    fileWriter.close()                                          // Close the file writer
 
     // Switch back the history schedule as it was before
     if !done then schedule = schedule.reverse

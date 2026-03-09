@@ -30,11 +30,30 @@ object RandomWalk extends ExplorationAlgorithm:
 class FixedSchedule(var targetSchedule: List[String]) extends ExplorationAlgorithm:
   def getNext(readyTasks: List[Controller]): Option[List[Controller]] = {
     targetSchedule.headOption match // Take the id of the task we want to execute.
-      case Some(ctrl) =>
+      case Some(item) =>
+        // From the schedule head we extract what controller to run (and a potential failure schedule)
+        // For example: "1.1.|0.1" => ctrl = "1.1.", failures = "0.1"
+        val Array(ctrl, failures) =
+          item.split("\\|", 2) match {
+            case Array(c, f) => Array(c, f)
+            case Array(c)    => Array(c, "")
+          }
+
         val target = readyTasks.filter(c => c.id.getId() == ctrl)
         if target.isEmpty then return None
         targetSchedule = targetSchedule.tail // Remove head from schedule
-        Some(List(target.head))              // Take target task and control
+        
+        val selectedController = target.head
+
+        // We add the failure schedule to the controller if one exists
+        val failureSchedule    =
+          if failures.isEmpty then Vector()
+          else failures.split('.').toVector.map(_ == "1")
+        if failureSchedule.nonEmpty then
+          selectedController.failureSchedule = failureSchedule
+          selectedController.possibleFailuresEncountered = 0
+
+        Some(List(selectedController)) // Take target task and control
       case None =>
         None
   }
