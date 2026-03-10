@@ -21,9 +21,11 @@ class Controller(
   val id: Id        = Id(parent, isEnd)
   var globalId: Int = -1
 
-  var scheduleIndex: Int = -1
-  var possibleFailuresEncountered: Int = 0
-  var failureSchedule: Vector[Boolean] = Vector()
+  private var scheduleIndex: Int                                   = -1
+  private var possibleFailuresEncountered: Int                     = 0
+  private var currentFailureSchedule: Vector[Boolean]              = Vector()
+  private var nextFailureSchedule: Vector[Boolean]                 = Vector()
+  private var storedFailureSchedules: List[(Int, Vector[Boolean])] = List[(Int, Vector[Boolean])]()
 
   val totalChildren = new AtomicInteger(0)
 
@@ -41,9 +43,11 @@ class Controller(
 
   def await(index: Int = -1) =
     // The scheduler will supply an index when the task is ready to run,
-    // this index is used to append information about failure injection
-    // when the controller finishes.
-    if index >= 0 then scheduleIndex = index
+    // this index is later used to append the failure injection information
+    // to the schedule.
+    if index >= 0 then
+      pushCurrentFailures()
+      scheduleIndex = index
     schedulerBarrier.await()
 
   def reset() = schedulerBarrier.reset()
@@ -72,5 +76,38 @@ class Controller(
   private[mccct] def startThread(task: Runnable, maxId: Int): Thread =
     globalId = maxId
     Thread.ofVirtual().start(task)
+
+  private[mccct] def setNextFailureSchedule(schedule: Vector[Boolean]): Unit =
+    // So that fixed schedule exploration can tell the controller what choices to make
+    nextFailureSchedule = schedule
+
+  private[mccct] def getNextFailureSchedule(): Vector[Boolean] =
+    val schedule = nextFailureSchedule
+    nextFailureSchedule = Vector()
+    schedule
+
+  private[mccct] def hasScheduledChoice(): Option[Boolean] =
+    val result =
+      if currentFailureSchedule.length > possibleFailuresEncountered then
+        Some(currentFailureSchedule(possibleFailuresEncountered))
+      else None
+    // Calling this function means we encountered an injection point
+    possibleFailuresEncountered += 1
+    result
+
+  private[mccct] def appendInjectionChoice(choice: Boolean): Unit =
+    // Keeps track of the choices made by the failure exploration algorithm
+    currentFailureSchedule = currentFailureSchedule :+ choice
+
+  private[mccct] def pushCurrentFailures(): Unit =
+    // When a controller is reused/finished we push and clear the failure points encountered
+    if currentFailureSchedule.nonEmpty then
+      storedFailureSchedules = (scheduleIndex, currentFailureSchedule) :: storedFailureSchedules
+    currentFailureSchedule = getNextFailureSchedule()
+    possibleFailuresEncountered = 0
+
+  private[mccct] def getFailures(): List[(Int, Vector[Boolean])] =
+    pushCurrentFailures()
+    storedFailureSchedules
 
 }

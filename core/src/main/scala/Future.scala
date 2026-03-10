@@ -146,9 +146,9 @@ object Scheduler {
 
   val runningActors = AtomicInteger(0)
 
-  var recordFailureInjections                     = true
-  var failureMapping: TreeMap[Int, Vector[Boolean]] = TreeMap[Int, Vector[Boolean]]()
-  var failureAlgorithm: FailureExplorationAlgorithm = NeverInject
+  private var recordFailureInjections                       = true
+  private var failureMapping: TreeMap[Int, Vector[Boolean]] = TreeMap[Int, Vector[Boolean]]()
+  private var failureAlgorithm: FailureExplorationAlgorithm = NeverInject
 
   private var readyTasks: List[Controller] =
     List() // The list of readyTasks in which the exploration algorithm can choose one to execute
@@ -358,15 +358,25 @@ object Scheduler {
         queueChange.signal()
     finally lock.unlock()
 
-  def getSchedule(): List[String] = schedule
+  def getSchedule(includeFailures: Boolean = true): List[String] =
+    if !includeFailures then schedule
+    else
+      schedule.zipWithIndex.map { case (ctrl, idx) =>
+        failureMapping.get(idx) match {
+          case Some(failures) => ctrl + '|' + failures.map(b => if b then '1' else '0').mkString(".")
+          case None           => ctrl
+        }
+      }
 
   private[mccct] def finish(ctrl: Controller, shouldDecrement: Boolean = true): Unit =
     lock.lock()
     try
       if shouldDecrement then cnt -= 1
-      // If possible failures were encountered during execution, we keep track of that in the scheduler
-      if ctrl.failureSchedule.nonEmpty then
-        failureMapping += (ctrl.scheduleIndex, ctrl.failureSchedule)
+
+      // If failure injection points were encountered during execution, we add what happened
+      // at those points so that it is possible to append that information to the schedule
+      failureMapping ++= ctrl.getFailures()
+
       activeTasks.getAndDecrement()
       if hasFinished then    // If this was the last task to complete and all tasks have been loaded then
         queueChange.signal() // If the Scheduler is in a state which should terminate, signal the queueChange
@@ -492,26 +502,24 @@ object Scheduler {
     )
     controller.await() // Wait until the task can resume
 
-  /**
-    * A method that can be instrumented in the code to inject failures based  
-    * on the scheduler's failure algorithm, or based on a recorded schedule.
+  /** A method that can be instrumented in the code to inject failures based on the scheduler's failure algorithm, or
+    * on a recorded schedule (takes precedence).
     *
-    * @param failure,
+    * @param failure
     *   the failure to inject
-    * @param controller,
+    * @param controller
     *   the controller in which `possibleFailure` was called
     */
   def possibleFailure(failure: Throwable)(using controller: Controller): Unit =
-    // Check if the controller has predetermined the result, otherwise generate result using failure algorithm
-    val shouldThrow =
-      if controller.failureSchedule.length > controller.possibleFailuresEncountered then
-        controller.failureSchedule(controller.possibleFailuresEncountered)
-      else
-        val choice = failureAlgorithm.shouldInject()
-        controller.failureSchedule = controller.failureSchedule :+ choice
-        choice
-    controller.possibleFailuresEncountered += 1
-    if shouldThrow then throw failure
+    val shouldInject =
+      controller.hasScheduledChoice() match {
+        case Some(choice) => choice
+        case None         =>
+          val choice = failureAlgorithm.shouldInject()
+          controller.appendInjectionChoice(choice)
+          choice
+      }
+    if shouldInject then throw failure
 
   def reset(): Unit =
     lock.lock()
@@ -656,10 +664,22 @@ object Scheduler {
     fileData.split(", ").toList // Split the data into the correct strings
   }
 
-  def scheduleToString(includeFailures: Boolean): String =
-    if !includeFailures then schedule.mkString(", ")
+  /** Generates a string from the schedule.
+    *
+    * @param includeFailures
+    *   whether or not failures should be included
+    * @param debugFormat
+    *   if the string should be formatted as a valid Scala list
+    * @return
+    *   the stringified schedule
+    */
+  def scheduleToString(includeFailures: Boolean = true, debugFormat: Boolean = false): String =
+    if !includeFailures then
+      if debugFormat then "List(" + schedule.mkString(", ") + ")"
+      else schedule.mkString(", ")
     else
-      val sb   = new StringBuilder(schedule.size * 10) // Set capacity for less resizing
+      val sb = new StringBuilder(schedule.size * 10) // Set capacity for less resizing
+      if debugFormat then sb.append("List(")
       var i    = 0
       val iter = schedule.iterator
       while (iter.hasNext) {
@@ -671,10 +691,12 @@ object Scheduler {
               id + "|" + failureSchedule.iterator.map(b => if b then '1' else '0').mkString(".")
             case None => id
           }
-        sb.append(value)
+        if debugFormat then sb.append("\"" + value + "\"")
+        else sb.append(value)
         if iter.hasNext then sb.append(", ")
         i += 1
       }
+      if debugFormat then sb.append(")")
       sb.toString()
 
   def writeSchedule(fileName: String = "", id: String = ""): Unit = {
