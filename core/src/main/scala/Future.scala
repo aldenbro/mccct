@@ -18,6 +18,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.CyclicBarrier
 import scala.collection.mutable.TreeMap
+import scala.quoted.{Expr, Quotes}
 
 object Future {
 
@@ -289,21 +290,23 @@ object Scheduler {
 
   def awaitTermination(requireAction: Boolean = false) =
     lock.lock()
-    try
-      // The end of the main thread has been reached
-      hasAllTasks = true // All top level tasks must now be available for the scheduler
-      stuckState.signalAll()
-      if hasFinished
-      then // If we have finished before calling awaitTermination Scheduler will be waiting for queueChange
-        queueChange.signalAll() // Signal the Scheduler a queueChange to get termination signal
-      termination
-        .awaitUninterruptibly() // Since the main thread has the lock, the termination signal can not be sent before the await
-      // If a timeout has happened an error should be thrown
-      if hasTimedOut then throw new DeadlockException
-    finally
-      schedule =
-        schedule.reverse // Since the tasks are prepended to the schedule history, the list must be reversed to get history in the correct order
-      lock.unlock()
+    if done then lock.unlock() // Avoid deadlock if multiple `awaitTermination` are used
+    else
+      try
+        // The end of the main thread has been reached
+        hasAllTasks = true // All top level tasks must now be available for the scheduler
+        stuckState.signalAll()
+        if hasFinished
+        then // If we have finished before calling awaitTermination Scheduler will be waiting for queueChange
+          queueChange.signalAll() // Signal the Scheduler a queueChange to get termination signal
+        termination
+          .awaitUninterruptibly() // Since the main thread has the lock, the termination signal can not be sent before the await
+        // If a timeout has happened an error should be thrown
+        if hasTimedOut then throw new DeadlockException
+      finally
+        schedule =
+          schedule.reverse // Since the tasks are prepended to the schedule history, the list must be reversed to get history in the correct order
+        lock.unlock()
 
   /** Signals the scheduler to execute if in stuck state
     *
@@ -502,23 +505,43 @@ object Scheduler {
     )
     controller.await() // Wait until the task can resume
 
-  /** A method that can be instrumented in the code to inject failures based on the scheduler's failure algorithm, or
-    * on a recorded schedule (takes precedence).
+  /** A method that can be instrumented in the code to inject failures based on the scheduler's failure algorithm, or on
+    * a recorded schedule (takes precedence).
     *
     * @param failure
     *   the failure to inject
     * @param controller
     *   the controller in which `possibleFailure` was called
     */
-  def possibleFailure(failure: Throwable)(using controller: Controller): Unit =
+  inline def possibleFailure(failure: Throwable)(using controller: Controller): Unit =
+    // Defined as a macro to automatically instrument unique ids for each call site.
+    ${ possibleFailureImpl('failure, 'controller) }
+
+  private object InjectionPointCounter:
+    private var counter: Int = 0
+    def nextId(): Int        =
+      val id = counter
+      counter += 1
+      id
+
+  private def possibleFailureImpl(
+      failure: Expr[Throwable],
+      controller: Expr[Controller]
+  )(using Quotes): Expr[Unit] =
+    val id = InjectionPointCounter.nextId()
+    '{ possibleFailureWithId(${ Expr(id) }, $failure)(using $controller) }
+
+  private def possibleFailureWithId(id: Int, failure: Throwable)(using controller: Controller): Unit =
+    if debug then println(s"Failure injection point (id=$id) invoked")
     val shouldInject =
       controller.hasScheduledChoice() match {
         case Some(choice) => choice
         case None         =>
-          val choice = failureAlgorithm.shouldInject()
+          val choice = failureAlgorithm.shouldInject(id)
           controller.appendInjectionChoice(choice)
           choice
       }
+    if debug then println(s"Will inject: $shouldInject")
     if shouldInject then throw failure
 
   def reset(): Unit =
@@ -722,4 +745,40 @@ object Scheduler {
     // Switch back the history schedule as it was before
     if !done then schedule = schedule.reverse
   }
+
+  /** Run McCCT on a function for a set number of iterations.
+    *
+    * @param func
+    *   the function to run
+    * @param iters
+    *   the number of times to run the function
+    * @param assertion
+    *   an assertion that should hold each execution
+    * @param alg
+    *   the schedule exploration algorithm
+    * @param shouldPrint
+    *   if scheduler information should be printed
+    * @param sequential
+    *   if the scheduler should perform tasks sequentially
+    * @param failureAlg
+    *   the failure exploration algorithm
+    */
+  def run[T](
+      func: => T,
+      iters: Int = 1,
+      assertion: T => Boolean = (_: T) => true,
+      alg: ExplorationAlgorithm = RandomWalk,
+      shouldPrint: Boolean = false,
+      sequential: Boolean = false,
+      failureAlg: FailureExplorationAlgorithm = NeverInject
+  ): Unit = {
+    (1 to iters).foreach(_ =>
+      start(alg, shouldPrint, sequential, failureAlg)
+      val res = func
+      awaitTermination()
+      assert(assertion(res))
+      failureAlg.newIter()
+    )
+  }
+
 }

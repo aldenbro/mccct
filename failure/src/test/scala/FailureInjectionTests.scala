@@ -91,4 +91,37 @@ class FailureInjectionTests {
     assert(Scheduler.getSchedule().last == "1.|1.1")
   }
 
+  /** If we run InjectOnNew with a bound, it should only inject that many failures.
+    */
+  @Test
+  def boundedInjectOnNewInjectsCorrectly(): Unit = {
+    def testFunc: Int = {
+      var res = 0
+      try {
+        possibleFailure(new ExampleFailure)
+      } catch {
+        case _: ExampleFailure => res += 1
+      }
+      try {
+        possibleFailure(new ExampleFailure)
+      } catch {
+        case _: ExampleFailure => res += 1
+      }
+      try {
+        possibleFailure(new ExampleFailure)
+      } catch {
+        case _: ExampleFailure => res += 1
+      }
+
+      println(res)
+      res
+    }
+
+    // Since we bound the failure injection to 1, the result should always be 1.
+    def assertion(res: Int): Boolean = res == 1
+
+    // We run the algorithm for 3 iterations, since we have 3 unique
+    // failure points, 1 should be triggered at each iteration.
+    Scheduler.run(testFunc, 3, assertion, failureAlg = InjectOnNew(NeverInject, 1))
+  }
 }
