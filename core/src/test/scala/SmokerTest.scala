@@ -156,8 +156,8 @@ class SmokerTest {
 
   }
 
-  //TODO: Fix deadlock recognition
-  //@Test
+  // TODO: Fix deadlock recognition
+  // @Test
   def smokerTest(): Unit = {
     println("Starting smokerTest")
     CoverageTracker.reset()
@@ -190,7 +190,6 @@ class SmokerTest {
       smokerFunc()
       Scheduler.awaitTermination()
       assert(false)
-    catch
-      case e: DeadlockException => ()
+    catch case e: DeadlockException => ()
   }
 }
