@@ -157,6 +157,35 @@ object Scheduler {
 
   private var startedThreads = List[(Thread, Controller)]()
 
+  def apply[T](alg: ExplorationAlgorithm = RandomWalk, shouldPrint: Boolean = false, sequential: Boolean = false)(
+      body: (Controller, gears.async.Async) ?=> T
+  ): Unit =
+    val rootController = new Controller(null)
+    val rootTask       = new Runnable {
+      def run() =
+        try
+          // Wait for scheduler to let the task start
+          rootController.await() 
+          // Try to execute the body
+          gears.async.Async.blocking:
+            body(using rootController)
+          // TODO: Add controller end here
+          // Signal the scheduler that this function has finished. 
+          // This will decrement the cnt by one and possibly terminate the scheduler.
+          Scheduler.finish(rootController)
+        catch // The scheduler is notified if an error occurs
+          case e =>
+            Scheduler.throwError(e, rootController)
+    }
+    Scheduler.start(alg, shouldPrint, sequential)
+    // Start task on virtual thread
+    Scheduler.startThread(rootTask, rootController)
+    // Submit the root to CCT scheduler
+    // TODO: Change so that controller keeps children, perhaps not in this specific case though
+    Scheduler.submit(rootController)
+    // Wait for root and potentially created children to terminate
+    Scheduler.awaitTermination()
+
   def start(alg: ExplorationAlgorithm = RandomWalk, shouldPrint: Boolean = false, sequential: Boolean = false): Unit =
     Scheduler.reset() // In case the scheduler has been used before, reset it so no information is carried over
     lock.lock()
