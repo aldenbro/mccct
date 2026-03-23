@@ -1,3 +1,4 @@
+/*
 package mccct
 
 import mccct.Async
@@ -34,3 +35,4 @@ object MainAsyncFinish {
     Scheduler.awaitTermination()
     println(s"${Scheduler.getSchedule()}")
 }
+ */

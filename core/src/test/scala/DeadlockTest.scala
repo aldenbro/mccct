@@ -16,7 +16,7 @@ import java.util.concurrent.CyclicBarrier
 //@RunWith(classOf[JUnit4])
 class DeadlockTest() {
 
-  //@Test
+  // @Test
   def deadlockTestWithParallelCode(): Unit = {
     val counter          = AtomicInteger(0)
     def testFunc(): Unit = {
@@ -74,7 +74,7 @@ class DeadlockTest() {
       case _ => assert(false)
   }
 
-  //@Test
+  // @Test
   def deadlockTestWithCodeAfter(): Unit = {
     val counter          = AtomicInteger(0)
     def testFunc(): Unit = {
@@ -131,7 +131,7 @@ class DeadlockTest() {
       case _ => assert(false)
   }
 
-  //@Test
+  // @Test
   def deadlockTestGeneral(): Unit = {
     def testFunc(): Unit = {
       val testLock1 = new ReentrantLock
@@ -178,7 +178,7 @@ class DeadlockTest() {
       case _ => assert(false)
   }
 
-  //@Test
+  // @Test
   def deadlockTestNested(): Unit = {
     def testFunc(): Unit = {
       val testLock1 = new ReentrantLock
@@ -209,7 +209,7 @@ class DeadlockTest() {
                   barr.await()
                   testLock1.lockInterruptibly()
                   try
-                    () // Unreachable 
+                    () // Unreachable
                   finally
                     testLock1.unlock()
                 finally testLock2.unlock()
@@ -230,7 +230,7 @@ class DeadlockTest() {
       case e => assert(false)
   }
 
-  //@Test
+  // @Test
   def deadlockTestWithNoAwait(): Unit = {
     def testFunc(): Unit = {
       Async.blocking:
@@ -252,7 +252,7 @@ class DeadlockTest() {
       case _ => assert(false)
   }
 
-  //@Test
+  // @Test
   def deadlockRecognitionTestWithAwait(): Unit = {
     def testFunc(): Unit = {
       Async.blocking:

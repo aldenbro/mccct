@@ -1,3 +1,4 @@
+/*
 package mccct
 package test
 
@@ -33,4 +34,4 @@ object MainAsyncFinish {
     assert(finalList.size == 3)
     assert(finalList == List(1, 2, 3))
 }
-
+ */

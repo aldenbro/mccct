@@ -1,3 +1,4 @@
+/*
 package mccct
 
 import scala.util.control.NonFatal
@@ -92,3 +93,4 @@ object Async {
     Scheduler.startThread(task, taskController)
     Scheduler.submit(taskController) // <- try variants below
 }
+ */
