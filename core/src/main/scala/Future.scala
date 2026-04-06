@@ -417,6 +417,9 @@ object Scheduler {
     try
       // We submit all the tasks that were associated with the controller (e.g. children)
       Scheduler.submitMultiple(controller.getAndClearAssociatedTasks())
+      // If failure injection points were encountered during execution, we add what happened
+      // at those points so that it is possible to append that information to the schedule
+      failureMapping ++= controller.getFailures()
       // The current task is finished
       Scheduler.decrementActiveTasks()
       if shouldDecrement then taskCount -= 1
@@ -432,16 +435,16 @@ object Scheduler {
     executionTasks.foreach { controller =>
       // We are starting/continuing a task
       activeTasks.getAndIncrement()
-      // Add the id of the task to the history/schedule of executed tasks (this run of the schedule)
-      schedule = controller.id.getId() :: schedule
       if debug then
         println(
           s"\t\tScheduler signalling task $controller to continue (taskCount=${taskCount}, activeTasks=${activeTasks.get()})\n"
         )
       lock.unlock()
       // Signal the task to start
-      controller.await(schedule.length)
+      controller.await(schedule.length) // Add schedule length so scheduler knows where to append potential failure information
       lock.lock()
+      // Add the id of the task to the history/schedule of executed tasks (this run of the schedule)
+      schedule = controller.id.getId() :: schedule
     }
 
   /** A function that starts a task on a virtual thread
