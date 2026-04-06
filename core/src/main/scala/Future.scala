@@ -147,9 +147,10 @@ object Scheduler {
 
   val runningActors = AtomicInteger(0)
 
-  private var recordFailureInjections                       = true
-  private var failureMapping: TreeMap[Int, Vector[Boolean]] = TreeMap[Int, Vector[Boolean]]()
-  private var failureAlgorithm: FailureExplorationAlgorithm = NeverInject
+  private var recordFailureInjections                        = true
+  private var failureMapping: TreeMap[Int, Vector[Boolean]]  = TreeMap[Int, Vector[Boolean]]()
+  var failurePointFirstEncountered: TreeMap[Int, (Int, Int)] = TreeMap[Int, (Int, Int)]()
+  private var failureAlgorithm: FailureExplorationAlgorithm  = NeverInject
 
   private var readyTasks: List[Controller] =
     List() // The list of readyTasks in which the exploration algorithm can choose one to execute
@@ -371,6 +372,31 @@ object Scheduler {
         }
       }
 
+  /** Creates a partial schedule from a full schedule based on cutoff points supplied.
+    *
+    * @param schedule
+    *   the schedule the partial schedule should be based on
+    * @param scheduleCutoff
+    *   how many scheduling points should be included (0-indexed)
+    * @param failureCutoff
+    *   how many failures should be included at the last scheduling point
+    * @return
+    *   a partial schedule
+    */
+  def createPartialSchedule(schedule: List[String], scheduleCutoff: Int, failureCutoff: Int = 0): List[String] =
+    schedule.take(scheduleCutoff + 1) match {
+      case xs :+ last =>
+        val modifiedLast = last.split("\\|", 2) match {
+          case Array(ctrl, failures) =>
+            val partialFailures = failures.split("\\.").take(failureCutoff).mkString(".")
+            if partialFailures.isBlank() then ctrl
+            else s"$ctrl|$partialFailures"
+          case _ => last // No failure information in last scheduling point, nothing to cut
+        }
+        xs :+ modifiedLast
+      case empty => empty
+    }
+
   private[mccct] def finish(ctrl: Controller, shouldDecrement: Boolean = true): Unit =
     lock.lock()
     try
@@ -537,11 +563,25 @@ object Scheduler {
       controller.hasScheduledChoice() match {
         case Some(choice) => choice
         case None         =>
-          val choice = failureAlgorithm.shouldInject(id)
-          controller.appendInjectionChoice(choice)
-          choice
+          lock.lock() // Lock needed to modify scheduler data and for failure exploration algorithms with internal data
+          try
+            val choice = failureAlgorithm.shouldInject(id)
+            if !choice then {
+              // If this is the first time we encounter the failure point without a scheduled choice,
+              // we keep track of how far in the schedule we are
+              failurePointFirstEncountered += (
+                id,
+                failurePointFirstEncountered.getOrElse(
+                  id,
+                  (controller.scheduleIndex, controller.possibleFailuresEncountered - 1)
+                )
+              )
+            }
+            controller.appendInjectionChoice(choice)
+            choice
+          finally lock.unlock()
       }
-    if debug then println(s"Will inject: $shouldInject")
+    if debug then println(s"Failure injection point (id=$id) will inject: $shouldInject")
     if shouldInject then throw failure
 
   def reset(): Unit =
@@ -561,6 +601,7 @@ object Scheduler {
       hasTimedOut = false
       recordFailureInjections = true
       failureMapping = TreeMap[Int, Vector[Boolean]]()
+      failurePointFirstEncountered = TreeMap[Int, (Int, Int)]()
       failureAlgorithm = NeverInject
     finally lock.unlock()
 
@@ -779,6 +820,56 @@ object Scheduler {
       assert(assertion(res))
       failureAlg.newIter()
     )
+  }
+
+  def runWithFailureExploration[T](
+      func: => T,
+      alg: ExplorationAlgorithm = RandomWalk,
+      sequential: Boolean = true,
+      bound: Int = -1,
+      debug: Boolean = false
+  ) = {
+    val (runs, erroneousRuns) = failureIteration(func, alg, sequential, debug, NeverInject, 0, bound)
+    println("Total runs: " + runs)
+    println("Total erroneous runs: " + erroneousRuns)
+  }
+
+  private def failureIteration[T](
+      func: => T,
+      alg: ExplorationAlgorithm = RandomWalk,
+      sequential: Boolean = true,
+      debug: Boolean = false,
+      failureAlg: FailureExplorationAlgorithm,
+      depth: Int,
+      bound: Int
+  ): (Int, Int) = {
+    Scheduler.start(alg = alg, sequential = sequential, failureAlg = failureAlg)
+    func
+    Scheduler.awaitTermination()
+
+    var runs          = 1
+    var erroneousRuns = 0
+    val schedule      = getSchedule()
+    if Scheduler.getNumErrors() > 0 then
+      erroneousRuns += 1
+      if debug then println("Erroneous schedule: " + schedule)
+    if bound < 0 || depth < bound then
+      failurePointFirstEncountered.foreach(point =>
+        val (id, (scheduleCutoff, failureCutoff)) = point
+        val partialSchedule                       = createPartialSchedule(schedule, scheduleCutoff, failureCutoff)
+        val (subRuns, subErroneousRuns) = failureIteration(
+          func,
+          FixedSchedule(partialSchedule, alg),
+          sequential,
+          debug,
+          InjectOnId(Set(id)),
+          depth + 1,
+          bound
+        )
+        runs += subRuns
+        erroneousRuns += subErroneousRuns
+      )
+    (runs, erroneousRuns)
   }
 
 }

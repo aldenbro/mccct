@@ -27,7 +27,7 @@ object RandomWalk extends ExplorationAlgorithm:
 
   def prepareNext(taskHistory: List[String]): Unit = {}
 
-class FixedSchedule(var targetSchedule: List[String]) extends ExplorationAlgorithm:
+class FixedSchedule(var targetSchedule: List[String], default: ExplorationAlgorithm = RandomWalk) extends ExplorationAlgorithm:
   def getNext(readyTasks: List[Controller]): Option[List[Controller]] = {
     targetSchedule.headOption match // Take the id of the task we want to execute.
       case Some(item) =>
@@ -53,7 +53,8 @@ class FixedSchedule(var targetSchedule: List[String]) extends ExplorationAlgorit
 
         Some(List(selectedController)) // Take target task and control
       case None =>
-        None
+        // When we run out of a schedule, we use the default scheduling
+        default.getNext(readyTasks)
   }
 
   def prepareNext(taskHistory: List[String]): Unit = {}

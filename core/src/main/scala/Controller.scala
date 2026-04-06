@@ -21,8 +21,8 @@ class Controller(
   val id: Id        = Id(parent, isEnd)
   var globalId: Int = -1
 
-  private var scheduleIndex: Int                                   = -1
-  private var possibleFailuresEncountered: Int                     = 0
+  private[mccct] var scheduleIndex: Int                                   = -1
+  private[mccct] var possibleFailuresEncountered: Int                     = 0
   private var currentFailureSchedule: Vector[Boolean]              = Vector()
   private var nextFailureSchedule: Vector[Boolean]                 = Vector()
   private var storedFailureSchedules: List[(Int, Vector[Boolean])] = List[(Int, Vector[Boolean])]()

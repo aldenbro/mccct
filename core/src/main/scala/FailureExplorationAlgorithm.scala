@@ -52,3 +52,23 @@ class InjectOnNew(default: FailureExplorationAlgorithm = NeverInject, bound: Int
       if shouldInject then failuresInjected += 1
       shouldInject
   def newIter(): Unit = failuresInjected = 0
+
+/** Algorithm that injects the failures with the given ids.
+  *
+  * @param ids
+  *   the ids that should be injected
+  * @param default
+  *   failure algorithm to apply if failure has been injected previously
+  * @param bound
+  *   the maximum number of failures injected in one iteration
+  */
+class InjectOnId(ids: Set[Int], default: FailureExplorationAlgorithm = NeverInject) extends FailureExplorationAlgorithm:
+  private var encounteredFailurePoints: Set[Int] = Set()
+  def shouldInject(id: Int): Boolean =
+    // We check if it is the id we want and that we have not triggered it previously
+    if ids(id) && !encounteredFailurePoints(id) then
+      encounteredFailurePoints += id
+      true
+    else
+      default.shouldInject(id)
+  def newIter(): Unit = encounteredFailurePoints = Set()
