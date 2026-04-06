@@ -26,7 +26,7 @@ class StressTests {
     assert(counter.get() == numFutures)                    // Is the counter correctly implemented
     assert(Scheduler.getSchedule().size == 2 * numFutures) // Did all futures start and finish?
     assert(scheduleNonChild.sliding(2).forall {            // Did we correctly use the FIFO algorithm?
-      case List(a, b) => b == a - 1
+      case List(a, b) => b == a + 1
       case _          => true
     })
   }
