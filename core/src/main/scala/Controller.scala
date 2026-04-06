@@ -4,13 +4,13 @@ import java.util.concurrent.CyclicBarrier
 import gears.async.Cancellable
 import java.util.concurrent.atomic.AtomicInteger
 
+// ? Async type is never used
 enum ControllerType:
   case Async, Finish, Base, Actor
 
 object Controller {
-
+  // ! Not needed with new method
   given rootController: Controller = Controller(null)
-
 }
 
 class Controller(
@@ -18,6 +18,12 @@ class Controller(
     val isEnd: Boolean = false,
     val controllerType: ControllerType = ControllerType.Base
 ) {
+
+  // Associated tasks includes children, end tasks, and possibly itself.
+  // It also contains a boolean whether or not the task should be counted when submitted.
+  @volatile
+  private var associatedTasks: List[(Controller, Boolean)] = List[(Controller, Boolean)]()
+
   val id: Id        = Id(parent, isEnd)
   var globalId: Int = -1
 
@@ -110,4 +116,11 @@ class Controller(
     pushCurrentFailures()
     storedFailureSchedules
 
+  private[mccct] def addAssociatedTask(controller: Controller, shouldIncrement: Boolean = true): Unit =
+    associatedTasks = (controller, shouldIncrement) :: associatedTasks
+
+  private[mccct] def getAndClearAssociatedTasks(): List[(Controller, Boolean)] =
+    val res = associatedTasks
+    associatedTasks = List[(Controller, Boolean)]()
+    res
 }

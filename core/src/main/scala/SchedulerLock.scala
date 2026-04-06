@@ -21,16 +21,15 @@ class SchedulerLock(val superLock: ReentrantLock = new ReentrantLock) {
     lockLock.lockInterruptibly()
     // Some tasks, like the timeout timer should not get affected by the sequential execution, therefore they should be able to skip this step and continuously wait
     while (superLock.isLocked() && Scheduler.isSequential && !hasPrio && !Scheduler.hasTimedOut) {
-      // Decrement the counter, which can allow another task to start.
-      Scheduler.decrementSequential(controller)
       // Create a new taskController for making the thread wait.
-      // Submit the task and its controller, sending a queuechange signal,
+      // Add the task and its controller, sending a queueChange signal,
       // and allows the same thread to try to acquire the lock again
-      Scheduler.submit(
-        controller,
-        false
-      ) // Since the cnt of this task has already been accounted for do not increase the cnt again when this task is resubmitted to the scheduler
-
+      // Since this task has already been accounted for do not increase the count again when this task is resubmitted to the scheduler
+      controller.addAssociatedTask(controller, false)
+      // Submit this controller and its children
+      Scheduler.submitMultiple(controller.getAndClearAssociatedTasks())
+      // Decrement the counter, which can allow another task to start.
+      Scheduler.decrementActiveTasks()
       lockLock.unlock()
       // wait for scheduler to resume task
       controller.await()
@@ -62,16 +61,19 @@ class SchedulerCondition(val superLock: SchedulerLock) {
     addToQueue(controller)
     // Unlock the lock that the condition is set to track
     superLock.unlock()
+    // Submit children tasks seen so far (the children might be the ones signaling)
+    Scheduler.submitMultiple(controller.getAndClearAssociatedTasks())
     // When await is called, another task should be able to be started
-    Scheduler.decrementSequential(controller)
+    Scheduler.decrementActiveTasks()
     // Wait until this task has been signaled to continue
     controller.awaitCondition()
     // Create a new taskController and wait until the scheduler signals for this task to be resumed
     // inform CCT scheduler --> should move task to ready queue
+    // ! Problematic, introduces non-determinism since the task signaling can submit associated tasks before or after
     Scheduler.submit(
       controller,
       false
-    ) // Since the cnt of this task has already been accounted for do not increase the cnt again when this task is resubmitted to the scheduler
+    ) // Since this task has already been accounted for do not increase the count again when this task is resubmitted to the scheduler
     // wait for scheduler to resume task
     controller.await()
     superLock.lock()
@@ -107,7 +109,6 @@ class SchedulerCondition(val superLock: SchedulerLock) {
     try
       awaitQueue.map(b =>
         b.awaitCondition() // Wait for the barrier
-        b.resetCondition() // Then reset it allowing it to be reused
       )
       awaitQueue = List()
     finally queueLock.unlock()

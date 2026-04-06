@@ -6,23 +6,15 @@ class Id(val parent: Controller, val isEnd: Boolean = false):
 
   var numChildren: AtomicInteger = AtomicInteger(0)
   private val id: String         = {
-    // We use parent as prefix, if parent exists and isn't root
-    val prefix =
-      if (parent == null || parent.isRoot)
-        ""
-      else
-        parent.id.getId()
-
-    // We use the unique children index for a normal controller.
-    // If it is a end controller it gets the special "0." suffix.
-    // The id of root is just "0.", a special case.
-    val suffix =
-      if (parent == null || isEnd)
-        "0."
-      else
-        parent.id.getAndIncrementNumChildren() + "."
-
-    prefix + suffix
+    // The root gets a special id
+    if parent == null then "0."
+    else
+      // The parent id should be prepended if the parent isn't the root,
+      // (however the root id is prepended if this is it's end task).
+      (if parent.isRoot && !isEnd then "" else parent.id.getId()) +
+        // If it's an end task, it gets a special "0." suffix.
+        // Otherwise, it gets a unique children id given by its parent.
+        (if isEnd then "0." else parent.id.getAndIncrementNumChildren() + ".")
   }
 
   private[mccct] def getAndIncrementNumChildren(): Int = numChildren.incrementAndGet()
