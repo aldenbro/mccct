@@ -28,8 +28,9 @@ class SchedulerLock(val superLock: ReentrantLock = new ReentrantLock) {
       controller.addAssociatedTask(controller, false)
       // Submit this controller and its children
       Scheduler.submitMultiple(controller.getAndClearAssociatedTasks())
-      // Decrement the counter, which can allow another task to start.
+      
       controller.waitForLock(this)
+      // Decrement the counter, which can allow another task to start.
       Scheduler.decrementActiveTasks()
       lockLock.unlock()
       // wait for scheduler to resume task
