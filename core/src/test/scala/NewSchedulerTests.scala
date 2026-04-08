@@ -5,7 +5,7 @@ import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
 import mccct._
-import mccct.Scheduler.checkSuspend
+import mccct.Scheduler.schedulePoint
 
 @RunWith(classOf[JUnit4])
 class NewSchedulerTests() {
@@ -77,24 +77,24 @@ class NewSchedulerTests() {
     def funcWithCheckSuspend: List[String] = {
       // Run scheduler
       Scheduler(FifoAlgorithm, sequential = true) {
-        checkSuspend()
+        schedulePoint()
         Future {
-          checkSuspend()
+          schedulePoint()
           Future {
-            checkSuspend()
+            schedulePoint()
             Future {
               Future {
                 Future {}
-                checkSuspend()
+                schedulePoint()
                 Future {}
               }
             }
           }
           Future {}
-          checkSuspend()
+          schedulePoint()
         }
-        checkSuspend()
-        checkSuspend()
+        schedulePoint()
+        schedulePoint()
       }
       // Return produced schedule
       Scheduler.getSchedule()
@@ -121,15 +121,15 @@ class NewSchedulerTests() {
   }
 
   // Runs the program n times and check that every schedule produced is the same
-    def checkDeterminism(func: => List[String], n: Int) = {
-      var head: Option[List[String]] = None
-      (1 to n).foreach(_ =>
-        head match {
-          case Some(schedule) =>
-            val res = func
-            assert(schedule == res, s"\nExpected: $schedule\nActually: $res")
-          case None => head = Some(func)
-        }
-      )
-    }
+  def checkDeterminism(func: => List[String], n: Int) = {
+    var head: Option[List[String]] = None
+    (1 to n).foreach(_ =>
+      head match {
+        case Some(schedule) =>
+          val res = func
+          assert(schedule == res, s"\nExpected: $schedule\nActually: $res")
+        case None => head = Some(func)
+      }
+    )
+  }
 }

@@ -28,6 +28,8 @@ class SchedulerLock(val superLock: ReentrantLock = new ReentrantLock) {
       controller.addAssociatedTask(controller, false)
       // Submit this controller and its children
       Scheduler.submitMultiple(controller.getAndClearAssociatedTasks())
+
+      controller.waitForLock(this)
       // Decrement the counter, which can allow another task to start.
       Scheduler.decrementActiveTasks()
       lockLock.unlock()
@@ -35,13 +37,15 @@ class SchedulerLock(val superLock: ReentrantLock = new ReentrantLock) {
       controller.await()
       lockLock.lockInterruptibly()
     }
+    controller.acquireLock(this)
     // In parallel mode we can lock as usual, in sequential mode there is no chance for race condition since only one task is running at a time.
     superLock.lockInterruptibly()
     lockLock.unlock()
 
-  def unlock(): Unit =
+  def unlock()(using controller: Controller): Unit =
     lockLock.lockInterruptibly()
     try
+      controller.releaseLock(this)
       superLock.unlock()
     finally lockLock.unlock()
 

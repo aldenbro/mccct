@@ -5,6 +5,7 @@ import java.util.concurrent.locks.{Lock, ReentrantLock, Condition}
 
 import scala.util.{Try, Success, Failure}
 import gears.async
+import async.Future.Promise
 // Use timer / timertask instead of gears `Scheduler`
 import gears.async.{Cancellable, Scheduler}
 import gears.async.default.given
@@ -22,30 +23,30 @@ import scala.quoted.{Expr, Quotes}
 
 object Future {
   def apply[T](body: Controller ?=> T)(using a: async.Async, parent: Controller): Future[T] =
-    val p              = async.Future.Promise[T]()
-    val taskController = new Controller(parent)
-    val task           = new Runnable {
+    val p          = Promise[T]()
+    val controller = new Controller(parent)
+    val task       = new Runnable:
       def run() =
         try
-          taskController.await() // Wait for scheduler to let the task start
+          controller.await() // Wait for scheduler to let the task start
           // Using a promise is enough, since a task is started only once
           // Try to execute the body
-          val result = body(using taskController)
+          val result = body(using controller)
           // Since the body has been run, we can add the end task
-          Scheduler.addEndTask(taskController)
+          Scheduler.addEndTask(controller)
           // Signal the scheduler that this function has finished. This will submit children and end, decrement the taskCount by one and possibly terminate the scheduler
-          Scheduler.finish(taskController)
+          Scheduler.finish(controller)
           p.complete(Success(result))
         catch // If an error is encountered then notify the scheduler of this
           case e =>
             // Call the throwError method, which increments the number of exceptions, and finishes this task
-            Scheduler.throwError(taskController)
+            Scheduler.throwError(controller)
             p.complete(Failure(e)) // Complete the promise/future as a failure
-    }
+
     // Start task on virtual thread
-    Scheduler.startThread(task, taskController)
+    Scheduler.startThread(task, controller)
     // Add task to parent
-    parent.addAssociatedTask(taskController)
+    parent.addAssociatedTask(controller)
     new Future(p.asFuture)
 }
 
@@ -79,7 +80,7 @@ object Scheduler {
   // ! Previously `cnt`, now `taskCount`
   private var taskCount   = 0                // The number of currently running tasks, used for termination
   private val activeTasks = AtomicInteger(0) // The number of currently running tasks, used for sequential execution
-  private[mccct] var isSequential = false
+  private[mccct] var isSequential = true
   private val lock: Lock          = new ReentrantLock
   private val queueChange         = lock
     .newCondition() // Used to control the scheduler. Is signaled when a new task is added to the readyTasks list, if a sequential task has become inactive, or if the scheduler should terminate
@@ -109,7 +110,7 @@ object Scheduler {
   def apply[T](
       alg: ExplorationAlgorithm = RandomWalk,
       shouldPrint: Boolean = false,
-      sequential: Boolean = false,
+      sequential: Boolean = true,
       failureAlg: FailureExplorationAlgorithm = NeverInject,
       recordFailures: Boolean = true,
       includeTaskEndings: Boolean = true,
@@ -117,32 +118,32 @@ object Scheduler {
   )(
       body: (Controller, gears.async.Async) ?=> T
   ): Unit =
-    val rootController = new Controller(null)
-    val rootTask       = new Runnable {
+    val controller = new Controller(null)
+    val task       = new Runnable:
       def run() =
         try
           // Wait for scheduler to let the task start
-          rootController.await()
+          controller.await()
           // Run the body of the root
           gears.async.Async.blocking {
-            body(using rootController)
+            body(using controller)
           }
           // The body has been run, so we can add the end task
-          Scheduler.addEndTask(rootController)
+          Scheduler.addEndTask(controller)
           // Signal the scheduler that this function has finished.
           // This will submit children and end task, decrement the taskCount by one and possibly terminate the scheduler.
-          Scheduler.finish(rootController)
+          Scheduler.finish(controller)
         catch // The scheduler is notified if an error occurs
           case _ =>
-            Scheduler.throwError(rootController)
-    }
+            Scheduler.throwError(controller)
+
     Scheduler.start(alg, shouldPrint, sequential, failureAlg, recordFailures, includeTaskEndings, backwardsCompatible = false)
     // Start task on virtual thread
-    Scheduler.startThread(rootTask, rootController)
+    Scheduler.startThread(task, controller)
     // Submit the root to CCT scheduler
-    Scheduler.submit(rootController)
+    Scheduler.submit(controller)
     // Wait for root and potentially created children to terminate
-    Scheduler.awaitTermination(backwardsCompatible = false)(using rootController)
+    Scheduler.awaitTermination(backwardsCompatible = false)(using controller)
 
   /** Function for parent task to add its end (.0.) task.
     *
@@ -155,24 +156,24 @@ object Scheduler {
   // ! This function replaces the different submitChild functions, since it is the same for all tasks
   def addEndTask(parent: Controller): Unit =
     if addEndTasks then
-      val endController = new Controller(parent, isEnd = true)
-      val emptyTask     = new Runnable { // The task that is executed on a new thread
+      val controller = new Controller(parent, isEnd = true)
+      val task       = new Runnable { // The task that is executed on a new thread
         def run() = {
           try
-            endController.await()           // Wait for scheduler to signal the controller to execute
-            Scheduler.finish(endController) // Do nothing and finish
+            controller.await()           // Wait for scheduler to signal the controller to execute
+            Scheduler.finish(controller) // Do nothing and finish
           catch
             case _ =>
-              Scheduler.throwError(endController)
+              Scheduler.throwError(controller)
         }
       }
-      Scheduler.startThread(emptyTask, endController) // Start this .0. child task on a new virtual thread
-      parent.addAssociatedTask(endController)
+      Scheduler.startThread(task, controller) // Start this .0. child task on a new virtual thread
+      parent.addAssociatedTask(controller)
 
   def start(
       alg: ExplorationAlgorithm = RandomWalk,
       shouldPrint: Boolean = false,
-      sequential: Boolean = false,
+      sequential: Boolean = true,
       failureAlg: FailureExplorationAlgorithm = NeverInject,
       recordFailures: Boolean = true,
       includeTaskEndings: Boolean = true,
@@ -209,31 +210,31 @@ object Scheduler {
             // Repeatedly called until list is non empty
             // For parallel it should act as an IF
             // For sequential execution there can be multiple queueSignals that do not update readyTasks
-            while (!hasFinished && readyTasks.size == 0) {
+            while readyTasks.isEmpty && !hasFinished() do
               if debug then
                 println(
                   s"Scheduler waiting for tasks... (taskCount=${taskCount}, activeTasks=${activeTasks.get()})"
                 )
               waitTasks() // Wait until we either have a task to execute, or if the scheduler has finished
-            }
+
             // If the scheduler reaches this one of two possibilities must be true
             // Either readyTasks is empty, which means that the queueChange signal was triggered because the scheduler should terminate
             // Or readyTasks is non-empty and the scheduler should continue execution
-            if hasFinished then
+            if hasFinished() then
               if debug then println("Scheduler has finished.")
               done = true
               termination.signal()
               return
             if debug then println(s"Scheduler has non-empty queue (len=${readyTasks.size}): ${readyTasks}")
-            val executionTasks = getNextTask(alg) // Get the next task as specified by the algorithm and its controller
+            val nextTasks = getNextTasks(alg) // Get the next task as specified by the algorithm and its controller
             // Execution tasks can be `None` if timeout happened while the scheduler was waiting for the correct task
-            executionTasks match
+            nextTasks match
               case Some(value) =>
                 readyTasks =
                   if readyTasks.eq(value) then Vector()
                   else
                     readyTasks diff value // Remove the task (and its controller) from the readyTasks list, since the same task should not be allowed to be started more than once
-                if debug then println(s"\tNumber of tasks selected to execute: ${executionTasks.size}")
+                if debug then println(s"\tNumber of tasks selected to execute: ${nextTasks.size}")
                 executeTask(value)
               case None =>
                 if debug then println("Scheduler terminating from timeout...")
@@ -251,9 +252,7 @@ object Scheduler {
     // If the scheduler has at least one running task, then the scheduler must wait until it finishes before continuing
     // If readyTasks is empty, the scheduler must wait until we get a new task in it
     // If the scheduler has finished do not wait
-    while (activeTasks.get() > 0 && !hasFinished) {
-      awaitQueueChange()
-    }
+    while activeTasks.get() > 0 && !hasFinished() do awaitQueueChange()
     // Can get a signal and not updated list, in these cases the scheduler has `waitTasks`
 
   /** Replaces manuals calls to `queueChange.signal()`
@@ -298,7 +297,7 @@ object Scheduler {
   // Furthermore, it is possible that the queueChange signal for termination has been sent at the end of the while loop
   // In this case the scheduler will get no more queueChange signals, therefore the scheduler must be able to skip the await (or it gets stuck)
   private def waitTasks(): Unit =
-    if (readyTasks.size == 0 && !hasFinished) then awaitQueueChange()
+    if readyTasks.isEmpty && !hasFinished() then awaitQueueChange()
 
   /** Tail-recursive function that returns the next task to execute
     *
@@ -307,7 +306,7 @@ object Scheduler {
     * @return
     *   the task to be executed
     */
-  private def getNextTask(alg: ExplorationAlgorithm): Option[Vector[Controller]] =
+  private def getNextTasks(alg: ExplorationAlgorithm): Option[Vector[Controller]] =
     alg.getNext(readyTasks) match
       case Some(l) =>
         Some(l)
@@ -315,9 +314,9 @@ object Scheduler {
       case None => { // There is non-empty queue, however it has the wrong elements
         awaitQueueChange() // Therefore, the scheduler should wait for an update until the algorithm returns a non-empty option
         if hasTimedOut then return None
-        if hasFinished then // Should not be possible
-          assert(false)     // Since readyTasks should always be non-empty if this line is reached
-        getNextTask(alg)
+        if hasFinished() then // Should not be possible
+          assert(false)       // Since readyTasks should always be non-empty if this line is reached
+        getNextTasks(alg)
       }
 
   def awaitTermination(backwardsCompatible: Boolean = true)(using rootController: Controller) =
@@ -336,7 +335,7 @@ object Scheduler {
         schedule.reverse // Since the tasks are prepended to the schedule history, the list must be reversed to get history in the correct order
       lock.unlock()
 
-  private def hasFinished: Boolean =
+  private def hasFinished(): Boolean =
     taskCount <= 0
       && readyTasks.size == 0
       && runningActors.get() == 0
@@ -424,7 +423,7 @@ object Scheduler {
       Scheduler.decrementActiveTasks()
       if shouldDecrement then taskCount -= 1
       // If this was the last task to complete we should signal the scheduler so it can terminate
-      if hasFinished then signalQueueChange()
+      if hasFinished() then signalQueueChange()
       if debug then
         println(
           s"Task $controller was finished, decremented taskCount: $shouldDecrement (taskCount=$taskCount, activeTasks=${activeTasks.get()})"
@@ -466,23 +465,23 @@ object Scheduler {
 
   /** A function that is called to timeout the scheduler, terminating threads and writing the schedule.
     *
-    * The function will (if the scheduler has not already timed out) print a message identifying which `checkSuspend`
+    * The function will (if the scheduler has not already timed out) print a message identifying which `schedulePoint`
     * resulted in the timeout and what controller it was a part of.
     *
     * After this all non-root tasks, will be removed from the readyTasks list, and the schedule up until this point will
     * be written to file. Lastly, all running task threads will be interrupted.
     *
     * @param id,
-    *   the id of the `checkSuspend` that resulted in the timeout
-    * @param controller,
-    *   the controller in which `checkSuspend` was called
+    *   the id of the `schedulePoint` that resulted in the timeout
+    * @param ctrl,
+    *   the controller in which `schedulePoint` was called
     */
   private def timeoutThreads(id: Int, write: Boolean, controller: Controller): Unit =
     lock.lockInterruptibly()
     try
       readyTasks = Vector()
       println(
-        s"A possible deadlock has occurred for controller ${controller}\nThe `checkSuspend` that triggered this timeout had id: ${id}"
+        s"A possible deadlock has occurred for controller ${controller}\nThe `schedulePoint` that triggered this timeout had id: ${id}"
       )
       if write then writeSchedule()
       startedThreads.map((t, c) =>
@@ -496,7 +495,7 @@ object Scheduler {
   /** A function that creates a scheduled timeout task, suspending execution of running tasks.
     *
     * @param id,
-    *   the id of the `checkSuspend` that resulted in the timeout
+    *   the id of the `schedulePoint` that resulted in the timeout
     * @param delay,
     *   the delay which the scheduler should wait before timeout
     * @param task,
@@ -512,7 +511,7 @@ object Scheduler {
         def run() =
           lock.lockInterruptibly()
           try
-            if !hasFinished then
+            if !hasFinished() then
               // If the controller is in readyTasks then it is not necessarily stuck, it may just be waiting for execution (for example in sequential mode).
               // In this case a timeout should not be thrown, instead restart the timeout.
               // Otherwise, call `timeoutThreads`
@@ -525,9 +524,9 @@ object Scheduler {
       }
     )
 
-  /** Adds a suspension point in the program that can allow other tasks to run.
+  /** Adds a scheduling point in the program that can allow other tasks to run.
     */
-  def checkSuspend(
+  def schedulePoint(
       id: Int = 0,
       timeout: Boolean = false,
       write: Boolean = true,
@@ -747,8 +746,8 @@ object Scheduler {
     for (lines <- bufferedSource.getLines()) {
       fileData = fileData + lines // Append each line to the fileData
     }
-    bufferedSource.close()      // Close the file
-    fileData.split(", ").toList // Split the data into the correct strings
+    bufferedSource.close()     // Close the file
+    fileData.split(",").toList // Split the data into the correct strings
   }
 
   /** Generates a string from the schedule.
@@ -786,8 +785,15 @@ object Scheduler {
       if debugFormat then sb.append(")")
       sb.toString()
 
-  def writeSchedule(fileName: String = "", id: String = ""): Unit = {
+  def writeSchedule(fileName: String = "", id: String = "", potentialTarget: Option[List[String]] = None): Unit = {
     if debug then println("Writing schedule to file")
+    val target =
+      if potentialTarget.isDefined
+      then potentialTarget.get
+      else if !done then
+        // If the scheduler has not finished by the time this function is called, then it means that the schedule is in the reverse order
+        schedule.reverse
+      else schedule
 
     if !done then
       // If the scheduler has not finished by the time this function is called, then it means that the schedule is in the reverse order
@@ -803,8 +809,9 @@ object Scheduler {
 
     val fileWriter = new FileWriter(new File(file)) // Open and create a new file with the given name
     // An option to this is to write each task on a new line, this would make parsing the file into a oneliner, however long files can be a bit hard to work with.
-    fileWriter.write(scheduleToString(recordFailureInjections)) // Write the task ids seperated by ", "
-    fileWriter.close()                                          // Close the file writer
+    fileWriter.write(target.mkString(",")) // Write the task ids seperated by ","
+    fileWriter.write(", ")                 // Have space at the end to make it possible to read ",,"
+    fileWriter.close()                     // Close the file writer
 
     // Switch back the history schedule as it was before
     if !done then schedule = schedule.reverse

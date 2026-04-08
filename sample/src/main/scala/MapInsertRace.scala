@@ -6,7 +6,7 @@ import gears.async.Async
 import gears.async.default.given
 
 import mccct.{Scheduler, Future, FixedSchedule, Controller}
-import mccct.Scheduler.checkSuspend
+import mccct.Scheduler.schedulePoint
 
 object MapInsertRace {
 
@@ -17,13 +17,13 @@ object MapInsertRace {
 
     def insert(key: Int, value: Int)(using a: Async, parent: Controller): Boolean = {
       if !map.containsKey(key) then
-        checkSuspend()
+        schedulePoint()
         map.put(key, value)
-        checkSuspend()
+        schedulePoint()
         true
       else
-        checkSuspend()
-        checkSuspend()
+        schedulePoint()
+        schedulePoint()
         false
     }
 

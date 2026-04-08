@@ -4,7 +4,7 @@ import scala.reflect.ClassTag
 
 import gears.async
 import gears.async.Async
-import Scheduler.checkSuspend
+import Scheduler.schedulePoint
 import scala.concurrent.duration.{FiniteDuration, SECONDS}
 
 trait Buffer[T] {
@@ -27,7 +27,7 @@ class BufferImpl[T: ClassTag](val size: Int) extends Buffer[T] {
 
   @throws[InterruptedException]
   override def put(item: T)(using async.Async, Controller): Unit =
-    checkSuspend(0, true, delay = FiniteDuration(5, SECONDS))
+    schedulePoint(0, true, delay = FiniteDuration(5, SECONDS))
     lock.lock()
     try {
       while (count == size) cond.await()
@@ -37,14 +37,14 @@ class BufferImpl[T: ClassTag](val size: Int) extends Buffer[T] {
       in = (in + 1) % size
 
       cond.signal() // Should be `notifyAll()`
-      checkSuspend(1)
+      schedulePoint(1)
     } finally {
       lock.unlock()
     }
 
   @throws[InterruptedException]
   override def get()(using async.Async, Controller): T =
-    checkSuspend(2, true, delay = FiniteDuration(5, SECONDS))
+    schedulePoint(2, true, delay = FiniteDuration(5, SECONDS))
     this.synchronized {}
     try {
       while (count == 0) cond.wait()
@@ -54,7 +54,7 @@ class BufferImpl[T: ClassTag](val size: Int) extends Buffer[T] {
       out = (out + 1) % size
 
       cond.signal() // Should be `notifyAll()`
-      checkSuspend(3)
+      schedulePoint(3)
       item
     } finally {
       lock.unlock()

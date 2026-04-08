@@ -6,7 +6,7 @@ import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 import java.util.concurrent.atomic.{AtomicReference, AtomicInteger}
 import java.util.concurrent.ConcurrentHashMap
-import Scheduler.checkSuspend
+import Scheduler.schedulePoint
 
 import gears.async.Async
 import gears.async.default.given
@@ -16,10 +16,9 @@ import java.util.concurrent.CyclicBarrier
 @RunWith(classOf[JUnit4])
 class SchedulerTests() {
 
-  /** A test that tests if all futures are executed when using the
-    * `RandomWalk` algorithm. In this test there are no awaits,
-    * however, all futures should still be executed and completed
-    * before the main thread can continue after `awaitTermination`.
+  /** A test that tests if all futures are executed when using the `RandomWalk` algorithm. In this test there are no
+    * awaits, however, all futures should still be executed and completed before the main thread can continue after
+    * `awaitTermination`.
     */
   @Test
   def exploreAllRandomWalkTest(): Unit =
@@ -52,12 +51,10 @@ class SchedulerTests() {
     assert(list.get().size * 2 == Scheduler.getSchedule().size) // 5 futures + 5 ".0." children
   }
 
-  /** A test that makes sure that all futures are executed when using
-    * the `RandomWalk` algorithm. This test has nested futures and
-    * multiple awaits. This allows us to say some things about the
-    * execution, like if we await the top-level task, then its child
-    * task has to be completed before we can continue (if the parent
-    * task waits for the child task).
+  /** A test that makes sure that all futures are executed when using the `RandomWalk` algorithm. This test has nested
+    * futures and multiple awaits. This allows us to say some things about the execution, like if we await the top-level
+    * task, then its child task has to be completed before we can continue (if the parent task waits for the child
+    * task).
     */
   @Test
   def randomWalkWithAwaitTest(): Unit =
@@ -96,8 +93,7 @@ class SchedulerTests() {
     assert(appearsAfter(4, 2, finalList))
   }
 
-  /** A test that makes sure that `reset` works as expected. This means
-    * that `reset` cleans all previous information.
+  /** A test that makes sure that `reset` works as expected. This means that `reset` cleans all previous information.
     */
   @Test
   def resetTest(): Unit = {
@@ -121,8 +117,8 @@ class SchedulerTests() {
     assert(!Scheduler.getDone())
   }
 
-  /** A test that makes sure that if a top-level future's await is hit
-    * before all top-level futures have been started then:
+  /** A test that makes sure that if a top-level future's await is hit before all top-level futures have been started
+    * then:
     *   1. all top-level futures are executed;
     *   2. futures are executed in the expected order.
     */
@@ -161,9 +157,8 @@ class SchedulerTests() {
     assert(schedule.size == 7) // 3 top-level tasks + root task + 3 ".0." child tasks
   }
 
-  /** A test that makes sure that tasks are not executed before it is
-    * necessary. In this case this means that all top-level tasks have
-    * to be started before execution is allowed.
+  /** A test that makes sure that tasks are not executed before it is necessary. In this case this means that all
+    * top-level tasks have to be started before execution is allowed.
     */
   @Test
   def noAwaitTest(): Unit =
@@ -241,17 +236,17 @@ class SchedulerTests() {
   def reliableFunctionTest(): Unit = {
     val s = List("1.", "2.", "1.", "2.", "1.", "2.", "2.", "2.0.", "1.", "1.0.", "0.", "0.")
     def reliableFunc(): (Boolean, Boolean) = {
-      val map                                                                 = ConcurrentHashMap[Int, Int]()
+      val map                                                            = ConcurrentHashMap[Int, Int]()
       def insert(key: Int, value: Int)(using Async, Controller): Boolean = {
-        checkSuspend()
+        schedulePoint()
         if (!map.containsKey(key))
-          checkSuspend()
+          schedulePoint()
           map.put(key, value)
-          checkSuspend()
+          schedulePoint()
           true
         else
-          checkSuspend()
-          checkSuspend()
+          schedulePoint()
+          schedulePoint()
           false
       }
 
@@ -272,13 +267,16 @@ class SchedulerTests() {
     assert(Scheduler.checkErrors(true))
   }
 
-  /** A function that determines if an element occurs before or after
-    * another element in a given list.
+  /** A function that determines if an element occurs before or after another element in a given list.
     *
-    * @param target  the target element
-    * @param after   the element which target should appear after
-    * @param list    the list in which the elements appear
-    * @return        true if target appears after after, and false otherwise
+    * @param target
+    *   the target element
+    * @param after
+    *   the element which target should appear after
+    * @param list
+    *   the list in which the elements appear
+    * @return
+    *   true if target appears after after, and false otherwise
     */
   private def appearsAfter[T](target: T, after: T, list: List[T]): Boolean = {
     val afterIndex  = list.indexOf(after)

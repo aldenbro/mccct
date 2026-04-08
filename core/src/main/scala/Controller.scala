@@ -39,6 +39,9 @@ class Controller(
 
   var thread: Thread = null
 
+  @volatile var heldLocks: List[SchedulerLock]     = List()
+  @volatile var waitingLock: Option[SchedulerLock] = None
+
   var timeoutTask: Option[Cancellable] = None
 
   def addTimeoutTask(timeout: Option[Cancellable]): Unit =
@@ -57,6 +60,24 @@ class Controller(
     schedulerBarrier.await()
 
   def reset() = schedulerBarrier.reset()
+
+  def waitForLock(lock: SchedulerLock) =
+    waitingLock = Some(lock)
+
+  def acquireLock(lock: SchedulerLock) =
+    heldLocks = lock +: heldLocks
+    waitingLock = None
+
+  def releaseLock(lock: SchedulerLock) =
+    heldLocks = heldLocks diff List(lock)
+
+  def isWaiting = waitingLock.isDefined
+
+  def resetWaiting = waitingLock = None
+
+  def waitingFor = waitingLock.get
+
+  def holdsLock(lock: SchedulerLock) = heldLocks.contains(lock)
 
   private val conditionBarrier = new CyclicBarrier(2)
 

@@ -6,7 +6,7 @@ import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
 import mccct.CoverageTracker.marker
-import mccct.Scheduler.checkSuspend
+import mccct.Scheduler.schedulePoint
 
 import gears.async
 import gears.async.Async
@@ -58,9 +58,9 @@ class SmokerTest {
       // println("Starting nonsmokerAgent")
       barrier.await()
       while (!done.get()) {
-        checkSuspend(10, true)
+        schedulePoint(10, true)
         lock.lock()
-        checkSuspend()
+        schedulePoint()
         try
           // Choose two random ingredients to add to the table
           val ing = rnd.between(0, 2)
@@ -84,18 +84,18 @@ class SmokerTest {
     def tobaccoSmoker()(using ac: async.Async, controller: Controller): Unit = {
       // println(s"Starting real thing tobacco (${task})")
       while (!done.get()) {
-        checkSuspend(7, true, false)
+        schedulePoint(7, true, false)
         lock.lock()
         try
           // println("tobaccoSmoker is waiting for matches")
-          checkSuspend(8, true, false)
+          schedulePoint(8, true, false)
           matches.await()
-          checkSuspend()
+          schedulePoint()
           if done.get() then return
           // println("tobaccoSmoker is waiting for paper")
-          checkSuspend(9, true, false)
+          schedulePoint(9, true, false)
           paper.await()
-          checkSuspend()
+          schedulePoint()
           if done.get() then return
           // println("tobaccoSmoker is smoking")
           smoke()
@@ -107,18 +107,18 @@ class SmokerTest {
     def matchesSmoker()(using ac: async.Async, controller: Controller): Unit = {
       // println(s"Starting real thing matches (${task})")
       while (!done.get()) {
-        checkSuspend(4, true, false)
+        schedulePoint(4, true, false)
         lock.lock()
         try
           // println("matchesSmoker is waiting for paper")
-          checkSuspend(5, true, false)
+          schedulePoint(5, true, false)
           paper.await()
-          checkSuspend()
+          schedulePoint()
           if done.get() then return
           // println("matchesSmoker is waiting for tobacco")
-          checkSuspend(6, true, false)
+          schedulePoint(6, true, false)
           tobacco.await()
-          checkSuspend()
+          schedulePoint()
           if done.get() then return
           // println("matchesSmoker is smoking")
           smoke()
@@ -130,18 +130,18 @@ class SmokerTest {
     def paperSmoker()(using ac: async.Async, controller: Controller): Unit = {
       // println(s"Starting real thing paper (${task})")
       while (!done.get()) {
-        checkSuspend(1, true, false)
+        schedulePoint(1, true, false)
         lock.lock()
         try
           // println("paperSmoker is waiting for tobacco")
-          checkSuspend(2, true, false)
+          schedulePoint(2, true, false)
           tobacco.await()
-          checkSuspend()
+          schedulePoint()
           if done.get() then return
           // println("paperSmoker is waiting for matches")
-          checkSuspend(3, true, false)
+          schedulePoint(3, true, false)
           matches.await()
-          checkSuspend()
+          schedulePoint()
           if done.get() then return
           // println("paperSmoker is smoking")
           smoke()
@@ -156,8 +156,8 @@ class SmokerTest {
 
   }
 
-  //TODO: Fix deadlock recognition
-  //@Test
+  // TODO: Fix deadlock recognition
+  // @Test
   def smokerTest(): Unit = {
     println("Starting smokerTest")
     CoverageTracker.reset()
@@ -190,7 +190,6 @@ class SmokerTest {
       smokerFunc()
       Scheduler.awaitTermination()
       assert(false)
-    catch
-      case e: DeadlockException => ()
+    catch case e: DeadlockException => ()
   }
 }

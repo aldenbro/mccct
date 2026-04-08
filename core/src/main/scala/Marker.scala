@@ -13,7 +13,7 @@ object CoverageTracker {
   // Map that saves how many times each marker has been hit
   private val markerMap = TrieMap[String, Int]()
   // Map that saves what schedule led to a specific list of markers (since each marker is either hit or unhit in one execution of the program)
-  private val scheduleMarkerMap = TrieMap[List[String], List[String]]()
+  private var scheduleMarkerList = List[(List[String], List[String])]()
   // List that stores which markers the user expects the tracker to hit
   private var expectedMarkers = List[String]()
 
@@ -68,15 +68,15 @@ object CoverageTracker {
 
   def reset() = this.synchronized {
     markerMap.clear()
-    scheduleMarkerMap.clear()
+    scheduleMarkerList = List()
     expectedMarkers = List[String]()
     resetStopTask()
     done.set(false)
   }
-
+  // TODO: change this to a list
   private def addSchedule(map: TrieMap[String, Int]): Unit =
     val schedule = Scheduler.getSchedule()
-    scheduleMarkerMap.addOne(schedule, map.keySet.toList)
+    scheduleMarkerList = (schedule, map.keySet.toList) +: scheduleMarkerList
 
   private def diff(map1: TrieMap[String, Int], map2: TrieMap[String, Int]): TrieMap[String, Int] =
     val keys   = map1.keySet ++ map2.keySet
@@ -93,9 +93,11 @@ object CoverageTracker {
   private def saveAndQuit(shouldReport: Boolean) = {
     // If an error was encountered then that interleaving will be saved
     // If this should be reported to a file, then write each problematic interleaving to its own file
-    if !scheduleMarkerMap.isEmpty && shouldReport then
-      scheduleMarkerMap.keySet.zipWithIndex.foreach { (schedule, idx) =>
-        Scheduler.writeSchedule(id = (idx + 1).toString())
+    if !scheduleMarkerList.isEmpty && shouldReport then
+      scheduleMarkerList.zipWithIndex.foreach { (content, idx) =>
+        val schedule = content._1
+        println(s"Writing scheduld ${schedule}")
+        Scheduler.writeSchedule(id = (idx + 1).toString(), potentialTarget = Some(schedule.reverse))
       }
     // Since hitting any marker will create the `stopExecution` task
     // it is necessary to reset the task at the end of the function call to leave no dangling tasks
@@ -152,8 +154,17 @@ object CoverageTracker {
       counter += 1
     }
     saveAndQuit(shouldReport)
-    (markerMap, scheduleMarkerMap)
+    (markerMap, TrieMap.from(scheduleMarkerList))
   }
+
+  def countErrors[T](
+      body: => T,
+      iterations: Int,
+      alg: ExplorationAlgorithm = RandomWalk,
+      sequential: Boolean = false
+  ): Int =
+    val (hitMarkers, failedSchedules) = trackCoverageIter(body, alg, iterations, sequential, true)
+    scheduleMarkerList.size
 
   def trackCoverage(
       testFunction: => Unit,
@@ -175,6 +186,6 @@ object CoverageTracker {
       if missedMarkers == List() then done.set(true)
     }
     saveAndQuit(shouldReport)
-    (markerMap, scheduleMarkerMap)
+    (markerMap, TrieMap.from(scheduleMarkerList))
   }
 }

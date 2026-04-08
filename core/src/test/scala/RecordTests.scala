@@ -88,8 +88,7 @@ class RecordTests {
       Scheduler.handleErrors(testFunc(), (), Scheduler.getSchedule(), outputFile = outputFile)
     assert(!hasNoErrors)
     assert(hasReliableErrors)
-
-    assert(Scheduler.getSchedule() == Scheduler.readSchedule(outputFile))
+    assert(Scheduler.getSchedule() == Scheduler.readSchedule(outputFile).dropRight(1))
     val f = new File(outputFile)
     f.delete()
   }
@@ -139,7 +138,7 @@ class RecordTests {
     assert(hasReliableErrors)
 
     assert(Scheduler.getNumErrors() == 2)
-    assert(Scheduler.getSchedule() == Scheduler.readSchedule(outputFile))
+    assert(Scheduler.getSchedule() == Scheduler.readSchedule(outputFile).dropRight(1))
     val f = new File(outputFile)
     f.delete()
   }

@@ -4,7 +4,7 @@ import gears.async.Async
 import gears.async.default.given
 import java.util.concurrent.atomic.AtomicReference
 import CoverageTracker.marker
-import Scheduler.checkSuspend
+import Scheduler.schedulePoint
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.concurrent.duration.{FiniteDuration, SECONDS}
@@ -15,15 +15,15 @@ object BadExample {
 
   val map                                                            = ConcurrentHashMap[Int, Int]()
   def insert(key: Int, value: Int)(using Async, Controller): Boolean = {
-    checkSuspend()
+    schedulePoint()
     if (!map.containsKey(key))
-      checkSuspend()
+      schedulePoint()
       map.put(key, value)
-      checkSuspend()
+      schedulePoint()
       true
     else
-      checkSuspend()
-      checkSuspend()
+      schedulePoint()
+      schedulePoint()
       false
   }
 
@@ -101,16 +101,16 @@ object BadExample {
 
   val lock                                                                  = SchedulerLock()
   def insertUpdated(key: Int, value: Int)(using Async, Controller): Boolean = {
-    checkSuspend()
+    schedulePoint()
     lock.lock()
     try
       if (!map.containsKey(key))
-        checkSuspend()
+        schedulePoint()
         map.put(key, value)
-        checkSuspend()
+        schedulePoint()
         true
       else
-        checkSuspend()
+        schedulePoint()
         false
     finally
       lock.unlock()

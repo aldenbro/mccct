@@ -6,7 +6,7 @@ import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
 import CoverageTracker.marker
-import Scheduler.checkSuspend
+import Scheduler.schedulePoint
 
 import gears.async
 import gears.async.Async
@@ -54,7 +54,7 @@ class BarberTest {
 
     def barber()(using async.Async, Controller): Unit =
       while (!done.get()) { // Run until timeout
-        checkSuspend()
+        schedulePoint()
         lock.lock()
         try
           if (waitingQueue.isEmpty) then // If we do not have someone in queue wait until there is someone
@@ -76,7 +76,7 @@ class BarberTest {
           servedCustomer += 1
         finally
           lock.unlock()
-          checkSuspend()
+          schedulePoint()
 
         Thread.sleep(rnd.nextLong(25)) // Simulate the hair cutting
       }
@@ -97,9 +97,9 @@ class BarberTest {
         lock.unlock()
 
     def badcustomer(id: Int)(using async.Async, Controller): Unit =
-      checkSuspend()
+      schedulePoint()
       if waitingQueue.size < freeSeats && !done.get() then
-        checkSuspend()
+        schedulePoint()
         lock.lock()
         try
           if done.get() then
@@ -116,8 +116,8 @@ class BarberTest {
           barberReady.await()
         finally
           lock.unlock()
-          checkSuspend()
-      else checkSuspend()
+          schedulePoint()
+      else schedulePoint()
   }
 
   @Test
