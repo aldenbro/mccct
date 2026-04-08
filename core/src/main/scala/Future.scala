@@ -108,32 +108,32 @@ object Scheduler {
   )(
       body: (Controller, gears.async.Async) ?=> T
   ): Unit =
-    val rootController = new Controller(null)
-    val rootTask       = new Runnable {
+    val controller = new Controller(null)
+    val task       = new Runnable {
       def run() =
         try
           // Wait for scheduler to let the task start
-          rootController.await()
+          controller.await()
           // Run the body of the root
           gears.async.Async.blocking {
-            body(using rootController)
+            body(using controller)
           }
           // The body has been run, so we can add the end task
-          Scheduler.addEndTask(rootController)
+          Scheduler.addEndTask(controller)
           // Signal the scheduler that this function has finished.
           // This will submit children and end task, decrement the taskCount by one and possibly terminate the scheduler.
-          Scheduler.finish(rootController)
+          Scheduler.finish(controller)
         catch // The scheduler is notified if an error occurs
           case _ =>
-            Scheduler.throwError(rootController)
+            Scheduler.throwError(controller)
     }
     Scheduler.start(alg, shouldPrint, sequential, includeTaskEndings, backwardsCompatible = false)
     // Start task on virtual thread
-    Scheduler.startThread(rootTask, rootController)
+    Scheduler.startThread(task, controller)
     // Submit the root to CCT scheduler
-    Scheduler.submit(rootController)
+    Scheduler.submit(controller)
     // Wait for root and potentially created children to terminate
-    Scheduler.awaitTermination(backwardsCompatible = false)(using rootController)
+    Scheduler.awaitTermination(backwardsCompatible = false)(using controller)
 
   /** Function for parent task to add its end (.0.) task.
     *
@@ -146,19 +146,19 @@ object Scheduler {
   // ! This function replaces the different submitChild functions, since it is the same for all tasks
   def addEndTask(parent: Controller): Unit =
     if addEndTasks then
-      val endController = new Controller(parent, isEnd = true)
-      val emptyTask     = new Runnable { // The task that is executed on a new thread
+      val controller = new Controller(parent, isEnd = true)
+      val task       = new Runnable { // The task that is executed on a new thread
         def run() = {
           try
-            endController.await()           // Wait for scheduler to signal the controller to execute
-            Scheduler.finish(endController) // Do nothing and finish
+            controller.await()           // Wait for scheduler to signal the controller to execute
+            Scheduler.finish(controller) // Do nothing and finish
           catch
             case _ =>
-              Scheduler.throwError(endController)
+              Scheduler.throwError(controller)
         }
       }
-      Scheduler.startThread(emptyTask, endController) // Start this .0. child task on a new virtual thread
-      parent.addAssociatedTask(endController)
+      Scheduler.startThread(task, controller) // Start this .0. child task on a new virtual thread
+      parent.addAssociatedTask(controller)
 
   def start(
       alg: ExplorationAlgorithm = RandomWalk,
