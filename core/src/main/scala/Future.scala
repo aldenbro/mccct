@@ -560,7 +560,7 @@ object Scheduler {
     * @param controller
     *   the controller in which `possibleFailure` was called
     */
-  inline def possibleFailure(failure: Throwable)(using controller: Controller): Unit =
+  inline def possibleFailure(inline failure: Throwable)(using controller: Controller): Unit =
     // Defined as a macro to automatically instrument unique ids for each call site.
     ${ possibleFailureImpl('failure, 'controller) }
 
@@ -578,7 +578,7 @@ object Scheduler {
     val id = InjectionPointCounter.nextId()
     '{ possibleFailureWithId(${ Expr(id) }, $failure)(using $controller) }
 
-  private def possibleFailureWithId(id: Int, failure: Throwable)(using controller: Controller): Unit =
+  def possibleFailureWithId(id: Int, failure: Throwable)(using controller: Controller): Unit =
     if debug then println(s"Failure injection point (id=$id) invoked")
     val shouldInject =
       controller.hasScheduledChoice() match {
@@ -816,6 +816,8 @@ object Scheduler {
     // Switch back the history schedule as it was before
     if !done then schedule = schedule.reverse
   }
+
+  def getFailurePointFirstEncountered(): TreeMap[Int, (Int, Int)] = failurePointFirstEncountered
 
   /** Run McCCT on a function for a set number of iterations.
     *

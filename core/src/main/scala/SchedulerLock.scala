@@ -37,17 +37,14 @@ class SchedulerLock(val superLock: ReentrantLock = new ReentrantLock) {
       controller.await()
       lockLock.lockInterruptibly()
     }
-    controller.acquireLock(this)
     // In parallel mode we can lock as usual, in sequential mode there is no chance for race condition since only one task is running at a time.
     superLock.lockInterruptibly()
+    controller.acquireLock(this)
     lockLock.unlock()
 
   def unlock()(using controller: Controller): Unit =
-    lockLock.lockInterruptibly()
-    try
-      controller.releaseLock(this)
-      superLock.unlock()
-    finally lockLock.unlock()
+    controller.releaseLock(this)
+    superLock.unlock()
 
   def newCondition(): SchedulerCondition = new SchedulerCondition(this)
 

@@ -20,7 +20,7 @@ object AlwaysInject extends FailureExplorationAlgorithm:
   * @param bound
   *   the maximum number of failures injected in one iteration
   */
-class InjectRandomly(chance: Double, bound: Int = -1) extends FailureExplorationAlgorithm:
+class RandomlyInject(chance: Double, bound: Int = -1) extends FailureExplorationAlgorithm:
   private var failuresInjected       = 0
   def shouldInject(id: Int): Boolean =
     if bound >= 0 && failuresInjected >= bound then false
