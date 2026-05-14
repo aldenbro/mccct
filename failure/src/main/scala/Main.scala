@@ -10,17 +10,18 @@ def writeToFile(path: String)(body: PrintWriter => Unit): Unit = {
 
 @main
 def run() = {
-  val iterations = 3
+  val trials = 30
 
   var configs: Vector[(String, RunMethod)] = Vector()
-  (1 to 9).foreach(i => configs = configs :+ (s"0.$i", BasicRun(failureAlg = RandomlyInject(i.toDouble / 10))))
+  (1 to 9).foreach(i => configs = configs :+ (s"0.$i", BasicRun(failureAlg = RandomlyInject(i.toDouble / 10), sequential = true)))
+  // (1 to 3).foreach(i => configs = configs :+ (s"IFE$i", ImprovedFailureExploration(cctIterations = i)))
 
   var vecs: Vector[Vector[(Int, Double)]] = Vector()
   configs.foreach(config =>
     var vec: Vector[(Int, Double)] = Vector()
-    (1 to iterations).foreach(x =>
+    (1 to trials).foreach(x =>
       Benchmark.runUntilCovered(
-        benchmark = failureAfterConcurrency(100, 25, 1, 5),
+        benchmark = failureAfterConcurrency(20, 5, 1, 5),
         maxIterations = 1000,
         method = config._2,
         printSummary = false
@@ -33,12 +34,12 @@ def run() = {
 
   writeToFile("data_iter.csv") { f =>
     f.println(configs.map(c => c._1).mkString(","))
-    (0 until iterations).foreach(i => f.println((0 until configs.size).map(j => f"${vecs(j)(i)._1}").mkString(",")))
+    (0 until trials).foreach(i => f.println((0 until configs.size).map(j => f"${vecs(j)(i)._1}").mkString(",")))
   }
 
   writeToFile("data_rate.csv") { f =>
     f.println(configs.map(c => c._1).mkString(","))
-    (0 until iterations).foreach(i => f.println((0 until configs.size).map(j => f"${vecs(j)(i)._2}").mkString(",")))
+    (0 until trials).foreach(i => f.println((0 until configs.size).map(j => f"${vecs(j)(i)._2}").mkString(",")))
   }
 }
 
@@ -114,3 +115,16 @@ def run_coverage() = {
     csvLines.foreach(f.println)
   }
 }
+
+// @main
+// def probabilityVerifier() = {
+//   val iter = 10000
+//   var count = 0
+//   (1 to iter).foreach(_ =>
+//     Scheduler(includeTaskEndings = false) {
+//       if generateSchedulingEvent(1, 20) then count += 1
+//     }
+//   )
+//   // println(Scheduler.scheduleToString())
+//   println(f"$count, $iter, ${count.toDouble/iter}")
+// }

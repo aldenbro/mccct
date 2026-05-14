@@ -10,21 +10,27 @@ trait RunMethod:
     *   the return value of the method (if it returned something) and if the method can continue
     */
   def runIteration[T](method: (gears.async.Async, Controller) ?=> T): (Option[T], Boolean)
+  def reset(): Unit
 
-class BasicRun(alg: ExplorationAlgorithm = RandomWalk, failureAlg: FailureExplorationAlgorithm = NeverInject)
-    extends RunMethod:
+class BasicRun(
+    alg: ExplorationAlgorithm = RandomWalk,
+    failureAlg: FailureExplorationAlgorithm = NeverInject,
+    sequential: Boolean = true
+) extends RunMethod:
   def runIteration[T](method: (gears.async.Async, Controller) ?=> T): (Option[T], Boolean) = {
     var res: Option[T] = None
-    Scheduler(alg = alg, failureAlg = failureAlg, includeTaskEndings = false) {
+    Scheduler(alg = alg, failureAlg = failureAlg, includeTaskEndings = false, sequential = sequential) {
       res = Some(method)
     }
     (res, true)
   }
+  def reset(): Unit = {}
 
 class FailureExploration(
     defaultAlg: ExplorationAlgorithm = RandomWalk,
     injectionBound: Int = -1,
-    cctIterations: Int = 1
+    cctIterations: Int = 1,
+    sequential: Boolean = true
 ) extends RunMethod:
   case class Config(
       alg: ExplorationAlgorithm,
@@ -43,7 +49,7 @@ class FailureExploration(
     if cctIterationsLeft <= 0 then config = getNextConfig()
     // We run the method using the information obtained above
     var res: Option[T] = None
-    Scheduler(alg = config.alg, failureAlg = config.failureAlg, includeTaskEndings = false) {
+    Scheduler(alg = config.alg, failureAlg = config.failureAlg, includeTaskEndings = false, sequential = sequential) {
       res = Some(method)
     }
     cctIterationsLeft -= 1
@@ -87,9 +93,18 @@ class FailureExploration(
     }
   }
 
+  def reset(): Unit = {
+    var isFirstIteration  = true
+    var cctIterationsLeft = 0
+    var stack             = List.empty[Config]
+
+    var config: Config = getNextConfig()
+  }
+
 class ImprovedFailureExploration(
     defaultAlg: ExplorationAlgorithm = RandomWalk,
-    cctIterations: Int = 1
+    cctIterations: Int = 1,
+    sequential: Boolean = true
 ) extends RunMethod:
   case class Config(
       alg: ExplorationAlgorithm,
@@ -110,7 +125,7 @@ class ImprovedFailureExploration(
     if cctIterationsLeft <= 0 then config = getNextConfig()
     // We run the method using the information obtained above
     var res: Option[T] = None
-    Scheduler(alg = config.alg, failureAlg = config.failureAlg, includeTaskEndings = false) {
+    Scheduler(alg = config.alg, failureAlg = config.failureAlg, includeTaskEndings = false, sequential = sequential) {
       res = Some(method)
     }
     cctIterationsLeft -= 1
@@ -152,4 +167,14 @@ class ImprovedFailureExploration(
       )
       queue.dequeue()
     }
+  }
+
+  def reset(): Unit = {
+    isFirstIteration  = true
+    cctIterationsLeft = 0
+    queue = Queue.empty
+
+    config = getNextConfig()
+
+    seenIds = Set.empty
   }

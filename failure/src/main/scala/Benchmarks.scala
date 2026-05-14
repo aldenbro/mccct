@@ -15,6 +15,8 @@ def generateSchedulingEvent(numerator: Int, denominator: Int)(using gears.async.
   val condition    = lock.newCondition()
   var triggerEvent = false
 
+  lock.lock()
+
   (1 to numerator).foreach(_ =>
     Future {
       lock.lock()
@@ -27,12 +29,12 @@ def generateSchedulingEvent(numerator: Int, denominator: Int)(using gears.async.
   (1 to (denominator - numerator)).foreach(_ =>
     Future {
       lock.lock()
+      triggerEvent = false
       condition.signal()
       lock.unlock()
     }
   )
 
-  lock.lock()
   condition.await()
   val res = triggerEvent
   lock.unlock()
@@ -57,6 +59,8 @@ def failureOrConcurrency(
     schedulingEventProbabilityNumerator: Int,
     schedulingEventProbabilityDenominator: Int
 )(using gears.async.Async, Controller, Coverage) = {
+  setCoveragePointCount(numberOfFutures + numberOfCAFChecks)
+
   (1 to numberOfFutures).foreach(i =>
     Future {
       try
@@ -92,6 +96,8 @@ def concurrencyAfterFailure(
     schedulingEventProbabilityNumerator: Int,
     schedulingEventProbabilityDenominator: Int
 )(using gears.async.Async, Controller, Coverage) = {
+  setCoveragePointCount(numberOfFutures + numberOfCAFChecks)
+
   (1 to numberOfFutures).foreach(i =>
     Future {
       try

@@ -60,6 +60,7 @@ object Benchmark {
   ): Unit = {
     // Reset in case benchmark has been run previously
     Benchmark.reset()
+    method.reset()
     // The benchmark needs a coverage instance available
     given tracker: Coverage = new Coverage
     var running             = true
@@ -80,7 +81,6 @@ object Benchmark {
       if !canContinue || allCovered || iterations >= maxIterations then running = false
       if printSchedules then println(f"[Iteration $iterations%04d]: ${Scheduler.scheduleToString()}")
     }
-
     if printSummary then Benchmark.printSummary()
   }
 
