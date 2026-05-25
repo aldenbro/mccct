@@ -13,15 +13,15 @@ def run() = {
   val trials = 30
 
   var configs: Vector[(String, RunMethod)] = Vector()
-  (1 to 9).foreach(i => configs = configs :+ (s"0.$i", BasicRun(failureAlg = RandomlyInject(i.toDouble / 10), sequential = true)))
-  // (1 to 3).foreach(i => configs = configs :+ (s"IFE$i", ImprovedFailureExploration(cctIterations = i)))
+  // (1 to 9).foreach(i => configs = configs :+ (s"0.$i", BasicRun(failureAlg = RandomlyInject(i.toDouble / 10), sequential = true)))
+  (1 to 3).foreach(i => configs = configs :+ (s"IFE$i", ImprovedFailureExploration(cctIterations = i)))
 
   var vecs: Vector[Vector[(Int, Double)]] = Vector()
   configs.foreach(config =>
     var vec: Vector[(Int, Double)] = Vector()
     (1 to trials).foreach(x =>
       Benchmark.runUntilCovered(
-        benchmark = failureAfterConcurrency(20, 5, 1, 5),
+        benchmark = nestedFailures(50, 3, 1, 0),
         maxIterations = 1000,
         method = config._2,
         printSummary = false
@@ -46,9 +46,9 @@ def run() = {
 @main
 def run_coverage() = {
 
-  val iterations = 3
-  // val method     = ImprovedFailureExploration(cctIterations = 2)
-  val method = BasicRun(failureAlg = RandomlyInject(0.5))
+  val iterations = 30
+  val method     = ImprovedFailureExploration(cctIterations = 2)
+  // val method = BasicRun(failureAlg = RandomlyInject(0.5))
 
   object CoverageData {
     var run: Vector[Double] = Vector(.0)
@@ -67,7 +67,7 @@ def run_coverage() = {
   (1 to iterations).foreach(_ =>
     // We run until coverage have been completed, updating coverage data after each internal iteration
     Benchmark.runUntilCovered(
-      benchmark = failureAfterConcurrency(100, 100, 1, 5),
+      benchmark = failureAfterConcurrency(20, 20, 1, 10),
       maxIterations = 1000,
       afterIteration = afterIteration,
       method = method,

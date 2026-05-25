@@ -14,7 +14,10 @@ lazy val core = (project in file("core"))
 lazy val failure = (project in file("failure"))
   .settings(
     name                                  := "failure",
-    libraryDependencies += "ch.epfl.lamp" %% "gears" % "0.2.0"
+    libraryDependencies += "ch.epfl.lamp" %% "gears" % "0.2.0",
+    libraryDependencies += "ch.epfl.lamp" %% "gears"           % "0.2.0",
+    libraryDependencies += "com.novocode"  % "junit-interface" % junitInterfaceVersion % "test",
+    testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")
   )
   .dependsOn(core)
 
