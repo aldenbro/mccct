@@ -261,9 +261,9 @@ def nestedFailures(
       // We get the previous level of futures
       val vec   = completed.get().slice(previousOffset, previousOffset + nodes)
       val start = i % nodes
-      // We check that all dependent Futures has been completed
+      // We check that all dependent Futures have been completed
       val dependenciesSatisfied = (0 until dependencies).map(x => vec((start + x) % nodes)).forall(b => b)
-      // We check that all counterdependent Futures has not been completed
+      // We check that all counterdependent Futures have not been completed
       val counterdependenciesUnsatisfied =
         (0 until counterdependencies).map(x => vec((start + dependencies + x) % nodes)).forall(b => !b)
       // If both checks pass we can run the contents of this future

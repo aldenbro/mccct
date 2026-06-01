@@ -587,6 +587,7 @@ object Scheduler {
           lock.lock() // Lock needed to modify scheduler data and for failure exploration algorithms with internal data
           try
             val choice = failureAlgorithm.shouldInject(id)
+            // TODO: Is this check needed?
             if !choice then {
               // If this is the first time we encounter the failure point without a scheduled choice,
               // we keep track of how far in the schedule we are
