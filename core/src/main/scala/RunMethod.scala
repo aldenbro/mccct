@@ -123,12 +123,20 @@ class ImprovedFailureExploration(
   def runIteration[T](method: (Async, Controller) ?=> T): (Option[T], Boolean) = {
     // If we have run out of cct iterations, get a new configuration
     if cctIterationsLeft <= 0 then config = getNextConfig()
+
     // We run the method using the information obtained above
     var res: Option[T] = None
     Scheduler(alg = config.alg, failureAlg = config.failureAlg, includeTaskEndings = false, sequential = sequential) {
       res = Some(method)
     }
     cctIterationsLeft -= 1
+
+    // Cleanup config so that it can be used as a new config next step
+    config.alg match
+      case a: FixedSchedule => a.reset()
+      case _ => ()
+    config.failureAlg.newIter()
+
     // For each failure point we add it to the queue if it has not been seen before
     Scheduler
       .getFailurePointFirstEncountered()

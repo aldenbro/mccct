@@ -23,7 +23,8 @@ def run() = {
     var vec: Vector[(Int, Double)] = Vector()
     (1 to trials).foreach(x =>
       Benchmark.runUntilCovered(
-        benchmark = nestedFailures(5, 5, 1, 0),
+        // Benchmark program provided here
+        benchmark = failureAfterConcurrency(3, 3, 1, 2),
         maxIterations = 1000,
         method = config._2,
         printSummary = false
@@ -49,8 +50,10 @@ def run() = {
 def run_coverage() = {
 
   val iterations = 30
-  val method     = ImprovedFailureExploration(cctIterations = 1)
-  // val method = BasicRun(failureAlg = RandomlyInject(0.5))
+
+  // Failure strategy
+  val method = ImprovedFailureExploration(cctIterations = 3)
+  //           BasicRun(failureAlg = RandomlyInject(0.5))
 
   object CoverageData {
     var run: Vector[Double] = Vector(.0)
@@ -69,7 +72,8 @@ def run_coverage() = {
   (1 to iterations).foreach(_ =>
     // We run until coverage have been completed, updating coverage data after each internal iteration
     Benchmark.runUntilCovered(
-      benchmark = failureAfterConcurrency(20, 20, 1, 10),
+      // Benchmark program provided here
+      benchmark = failureAfterConcurrency(20, 20, 1, 2),
       maxIterations = 1000,
       afterIteration = afterIteration,
       method = method,
@@ -137,16 +141,3 @@ def run_coverage() = {
   }
 
 }
-
-// @main
-// def probabilityVerifier() = {
-//   val iter = 10000
-//   var count = 0
-//   (1 to iter).foreach(_ =>
-//     Scheduler(includeTaskEndings = false) {
-//       if generateSchedulingEvent(1, 20) then count += 1
-//     }
-//   )
-//   // println(Scheduler.scheduleToString())
-//   println(f"$count, $iter, ${count.toDouble/iter}")
-// }

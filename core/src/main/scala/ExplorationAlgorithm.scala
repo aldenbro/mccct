@@ -28,8 +28,9 @@ object RandomWalk extends ExplorationAlgorithm:
   def prepareNext(taskHistory: Vector[String]): Unit = {}
 
 class FixedSchedule(var targetSchedule: List[String], default: ExplorationAlgorithm = RandomWalk) extends ExplorationAlgorithm:
+  var index = 0
   def getNext(readyTasks: Vector[Controller]): Option[Vector[Controller]] = {
-    targetSchedule.headOption match // Take the id of the task we want to execute.
+    targetSchedule.lift(index) match // Take the id of the task we want to execute.
       case Some(item) =>
         // From the schedule head we extract what controller to run (and a potential failure schedule).
         // For example: "1.1.|0.1" => ctrl = "1.1.", failures = "0.1"
@@ -41,7 +42,7 @@ class FixedSchedule(var targetSchedule: List[String], default: ExplorationAlgori
 
         val target = readyTasks.filter(c => c.id.getId() == ctrl)
         if target.isEmpty then return None
-        targetSchedule = targetSchedule.tail // Remove head from schedule
+        index += 1 // Advance schedule
 
         val selectedController = target.head
 
@@ -58,6 +59,8 @@ class FixedSchedule(var targetSchedule: List[String], default: ExplorationAlgori
   }
 
   def prepareNext(taskHistory: Vector[String]): Unit = {}
+
+  def reset() = index = 0
 
 class RegressionSchedule(var targetSchedule: List[String]) extends ExplorationAlgorithm:
   def getNext(readyTasks: Vector[Controller]): Option[Vector[Controller]] =

@@ -112,8 +112,7 @@ class FailureInjectionTests {
       } catch {
         case _: ExampleFailure => res += 1
       }
-
-      println(res)
+      
       res
     }
 
